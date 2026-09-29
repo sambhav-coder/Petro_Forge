@@ -1,80 +1,300 @@
-# SIH26120 - Digital Twin for Well-to-Surface Optimization of Cyclic Steam Stimulation (CSS) and Sucker Rod Pump (SRP) Operations for Heavy Oil Wells of Baghewala Field.
+# 🚀 PetroForge
 
-[![Smart India Hackathon 2026](https://img.shields.io/badge/SIH-2026-blue.svg)](https://sih.gov.in)
-[![Category](https://img.shields.io/badge/Category-Software-emerald.svg)](https://sih.gov.in)
-[![Ministry / Org](https://img.shields.io/badge/Organization-Oil%20India%20Limited-indigo.svg)]()
-[![Theme](https://img.shields.io/badge/Theme-Smart%20Automation-purple.svg)]()
-[![Domain](https://img.shields.io/badge/Domain-Heavy%20Oil%20CSS%20SRP%20Digital%20Twin-orange.svg)]()
+### Physics + AI Digital Twin for Well-to-Surface Optimization of CSS & SRP Operations in Heavy Oil Wells
 
----
+PetroForge is an **SIH26120 prototype** that connects reservoir behavior, wellbore conditions,
+SRP performance, production, mechanical risk, what-if simulation, and joint CSS × SRP
+optimization into one deterministic engineering decision-support layer — built for the heavy
+oil wells of Baghewala Field (Oil India Limited).
 
-## 🎯 Problem Statement Overview
-- **Problem Statement ID:** `SIH26120`
-- **Title:** Digital Twin for Well-to-Surface Optimization of Cyclic Steam Stimulation (CSS) and Sucker Rod Pump (SRP) Operations for Heavy Oil Wells of Baghewala Field.
-- **Sponsoring Organization:** Oil India Limited
-- **Department:** Oil India Limited
-- **Category:** Software
-- **Theme:** Smart Automation
+> **Status honesty first:** this baseline is a deterministic **prototype simulator**.
+> No trained ML model, no field calibration, no live field data, and no equipment control
+> exist in this baseline. Facts from the problem statement are tagged **[PS]**,
+> prototype assumptions **[PROTO]**, standard engineering **[STD]**.
 
-### 📖 Official Description
-• Background Baghewala Field in Rajasthan produces heavy crude oil (17â€“19Â° API) from the Jodhpur Sandstone reservoir. The reservoir is characterized by High crude viscosity, High asphaltene content, Low reservoir pressure, Low reservoir temperature (46â€“48Â°C) and Poor oil mobility under primary recovery. Consequently, artificial lift and thermal enhanced oil recovery are critical for sustained production. At present, CSS cycle design and SRP operation are optimized separately using historical experience. As reservoir temperature declines after steam injection, crude viscosity increases, leading to reduced pump efficiency, higher energy consumption, rod floating issues, rod failures and lower oil recovery. There is a need for an integrated, data-driven system that continuously optimizes both CSS and artificial lift operations.• Problem Description Current operations face the following challenges:• CSS parameters (steam volume, injection pressure, soak time and production cut-off)are largely based on historical practices.• SRP operating parameters (stroke length, SPM and VFD settings) are adjusted manually and reactively.• Heavy crude causes rod floating, impact loading, frequent pump unsetting, rod failures and increased maintenance.• Reservoir behaviour, wellbore conditions and SRP performance are not optimized together.• Lack of predictive analytics results in higher Steam-Oil Ratio (SOR), increased energy consumption and reduced production efficiency.• Expected Outcome / Solution Develop an AI-enabled Well-to-Surface Digital Twin that integrates reservoir, wellbore and surface production systems to provide real-time monitoring, prediction and optimization.The solution should:• Optimize CSS cycle parameters.• Predict reservoir heating, cooling and production performance.• Continuously optimize SRP operation by adjusting stroke speed and SPM based on well conditions.• Detect rod floating and minimize impact loading.• Improve pump efficiency and equipment reliability.• Optimize steam and energy consumption while reducing operating cost.• Expected Benefits• Increased oil production and recovery.• Reduced Steam-Oil Ratio (SOR).• Lower energy consumption per barrel.• Reduced rod failures and pump unsetting.• Improved equipment life and operational reliability.• Data-driven and predictive decision making.• Relevant Data Availability The field has sufficient historical and operational data, including:• Production history• CSS cycle records• Steam injection parameters• VFD and SRP operating data• Rod failure and pump unsetting history• Well completion and reservoir data• Fluid properties and pressure data
-
----
-
-## 💡 Implemented Prototype (decision-support simulator, not field control)
-Our team has built a deterministic prototype for **Oil India Limited**:
-1. **Baghewala Digital Twin Dashboard (`project/index.html`):** Dark engineering UI with well selector, KPI cards, Reservoir → Wellbore → SRP → Surface flow, CSS phase, what-if simulation, joint optimization results, top-5 scenarios, risk cards, and audit timeline — all rendered from real API responses, no mock values.
-2. **FastAPI Service (`project/app.py` + `twin_physics.py` + `twin_optimize.py`):** Pydantic-validated well telemetry, in-memory well store, deterministic prototype thermal/viscosity/inflow/pump/SOR/energy models, deterministic engineering risk indicators, side-effect-free simulation, and a 243-scenario CSS × SRP grid optimizer with value-traceable reasons. Swagger docs included; SHA-256 per-record audit hashes.
-3. **Technical Solution Document (`project/solution.md`):** Problem analysis, implemented equations with prototype-vs-PS provenance, SOR/energy conventions, optimizer specification, validation results, limitations, and demo flow.
-4. **Automated Test Suite (`project/test_*.py`):** 56 tests covering telemetry, physics directional behavior, simulation side-effect freedom, optimizer determinism/bounds/edge cases, and API contracts.
-5. **Containerization (`project/Dockerfile` & `project/docker-compose.yml`):** API on :8000 plus nginx preview of the dashboard on :8080.
+[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
+[![Pytest](https://img.shields.io/badge/Tests-56_passed-brightgreen.svg)](./project)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
+[![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
 ---
 
-## 🚀 Quick Start Guide
+## 1. 🌐 Project Vision
 
-### Option 1: Instant Browser Demo (Zero Setup)
-Simply open `project/index.html` in any modern web browser or serve it locally:
-```bash
-cd "SIH26120 - Digital Twin for Well-to-Surface Optimization of Cyclic Steam Stimulation/project"
-python -m http.server 8080
+Heavy-oil CSS + SRP operations form one coupled chain:
+
 ```
-Open [http://localhost:8080](http://localhost:8080) to access the command center.
+Reservoir → Wellbore → SRP → Surface → Production → Analytics → Simulation → Optimization → Decision Support
+```
 
-### Option 2: Run Full Python FastAPI Microservice
-```bash
-cd "SIH26120 - Digital Twin for Well-to-Surface Optimization of Cyclic Steam Stimulation/project"
-pip install -r requirements.txt
+Tuning steam injection and pump settings **in isolation** is insufficient: steam changes
+temperature → viscosity → mobility → inflow, while the pump can only lift what the reservoir
+delivers. An oversized pump against weak inflow creates impact loading and unsetting risk;
+excess steam inflates SOR and energy cost. PetroForge couples both sides in a single
+transparent calculation so every recommendation shows its production / SOR / energy / risk
+trade-off.
+
+## 2. 🎯 SIH 26120 Problem
+
+- **[PS]** Heavy crude (17–19° API), Jodhpur Sandstone, Baghewala Field, Rajasthan
+- **[PS]** Low reservoir pressure, low reservoir temperature (46–48 °C), high viscosity, high asphaltene, poor primary mobility
+- **[PS]** CSS decisions (steam volume, injection pressure, soak time, production cut-off) based on historical practice
+- **[PS]** SRP decisions (stroke length, SPM, VFD) adjusted manually and reactively
+- **[PS]** Rod floating, impact loading, frequent pump unsetting, rod failures, high SOR and energy use
+- **[PS]** Need: integrated, data-driven well-to-surface optimization
+
+## 3. 💡 PetroForge Approach
+
+```mermaid
+flowchart LR
+    A[Well / Reservoir State] --> B[Physics Engine]
+    B --> C[Risk Engine]
+    B --> D[Simulation]
+    D --> E[Optimization]
+    C --> F[Decision Support]
+    E --> F
+    F --> G[Dashboard]
+```
+
+Deterministic prototype physics **[PROTO]** produces a twin snapshot; transparent risk
+proxies score mechanical mismatch; side-effect-free simulation answers "what if…"; a
+bounded grid search recommends a joint CSS × SRP scenario with value-traceable reasons.
+
+## 4. 🧠 Digital Twin Model
+
+Implemented in `project/twin_physics.py` (deterministic, unit-aware, no randomness):
+
+| Component | Implemented relationship |
+|---|---|
+| Heating **[PROTO]** | `T = T_base + 180·I·(1 − exp(−t/72))`, `I = clamp(0.5·V/1000 + 0.5·P/70, 0, 1)` |
+| Cooling **[PROTO]** | `T = T_base + (T_peak − T_base)·exp(−t/72)`; `IDLE` phase uses this branch |
+| Effective temperature | Heating at `soak_time_h` exposure; clamped to [0, 350] °C |
+| Viscosity **[PROTO]** | `μ = 350·exp(4500·(1/(T+273.15) − 1/(47+273.15)))·API_factor`, clamped to [0.1, 100000] cP (always positive) |
+| Mobility **[PROTO]** | `mobility = 350 / μ` (1 at reference viscosity) |
+| Reservoir inflow **[PROTO]** | `q = 0.8·max(P_res − P_wh, 0)·mobility`, capped at 5000 bopd, never negative |
+| SRP theoretical **[PROTO+STD]** | `Q = (π/4·D²)·stroke·SPM·1440/9702` bopd, D = 2.0 in bore **[PROTO]** |
+| Pump actual **[PROTO]** | `Q_actual = Q·fillage(0.85)·efficiency(0.75)` — fixed defaults, clearly marked |
+| Coupled production | `production = min(inflow, pump)` + `INFLOW_LIMITED` / `PUMP_LIMITED` label |
+| SOR (prototype t/bbl) | `steam_t / (production·30 days)`; `None` + `UNDEFINED_ZERO_OIL` at zero production |
+| Energy (per 24 h day) **[PROTO]** | `steam_t·750` kWh + `SPM·stroke·0.5` kWh; per-barrel when production > 0 |
+| Rod floating **[PROTO]** | `clamp(μ/2000, 0, 1)` — thicker oil supports the rod string |
+| Impact loading **[PROTO]** | pump-demand-vs-inflow mismatch + SPM aggressiveness blend |
+| Pump unsetting **[PROTO]** | inflow/pump mismatch fraction + wellhead-vs-reservoir pressure factor |
+
+Reference anchors from the problem statement: 47 °C (midpoint of **[PS]** 46–48 °C) and
+18° API (midpoint of **[PS]** 17–19° API). Everything else above is a prototype
+assumption — see `project/solution.md` Appendix A.
+
+## 5. 🔥 CSS + SRP Physics
+
+```
+Steam (V, P, soak) → thermal state → viscosity → mobility → reservoir inflow  [PROTO]
+Stroke × SPM → pump capacity → coupled production = min(inflow, pump)         [PROTO]
+```
+
+The prototype couples both sides with the limiting relationship: the well produces what
+the reservoir delivers **and** what the pump can lift, whichever binds. No
+petroleum equations beyond those in §4 are claimed.
+
+## 6. ⚙️ Simulation Engine
+
+`POST /api/v1/wells/{well_id}/simulate` accepts optional overrides (steam volume /
+pressure, soak, SPM, stroke, phase), builds a hypothetical state copy, and returns
+current + scenario snapshots with `scenario − current` deltas. **Deterministic and
+side-effect free** — well record, twin, audit log, and well count verified byte-identical
+after simulation.
+
+```json
+// request:  {"steam_volume_t": 1000.0, "spm": 6.0}
+// response: {"current": {...}, "scenario": {...},
+//            "delta": {"production_delta_bopd": 28.5, "sor_delta_t_per_bbl": ..., ...}}
+```
+
+## 7. 🎯 Optimization Engine
+
+Deterministic bounded grid search over the Block 2 physics (no scipy, no ML):
+
+- **Dimensions:** steam volume, steam injection pressure, soak time, SPM, stroke
+  (`vfd_percent` excluded — no physics function consumes it; documented, not faked)
+- **Default grid:** 600/800/1000 t × 50/65/80 bar × 24/48/72 h × 4/6/8 SPM × 72/84/96 in
+  → **3⁵ = 243 scenarios**
+- **Objective (prototype demonstration weights — NOT Oil India provided):**
+  `score = 0.40·norm(production) − 0.25·norm(SOR) − 0.15·norm(energy) − 0.20·mean_risk`,
+  min-max normalized per run, deterministic tie-break
+- **Constraints:** input-safety ranges enforced by rejection (HTTP 422), custom grids
+  1–5 values/dimension, max 2000 combinations
+- Returns recommended scenario (+score/inputs), current-vs-recommended delta, **top-5
+  scenarios**, and `why_recommended[]` reasons emitted only when their numeric condition
+  holds. Live example: 142.7 → 228.3 BOPD (+85.6), SOR 0.1986 → 0.0876, energy −187356 kWh.
+
+## 8. 🚨 Risk Engine
+
+Three deterministic prototype indicators, each returning `risk_level`
+(LOW <0.33 / MODERATE <0.66 / HIGH), `risk_score` 0–1, and a `reason` embedding the
+actual numbers: **rod floating**, **impact loading**, **pump unsetting**. These are
+engineering proxies — **not** validated failure prediction, **not** probabilities,
+**not** ML outputs.
+
+## 9. 📊 Dashboard
+
+`project/index.html` (Tailwind + Chart.js + Lucide, dark engineering theme) renders
+**only real API responses** — no `Math.random`, no mock values, no fabricated history:
+
+- Well selector (from `GET /wells`), backend status, refresh, BGW-DEMO baseline loader
+- KPI cards: BOPD, °C, cP, prototype SOR, kWh, risk status
+- Reservoir → Wellbore → SRP → Surface flow with live values
+- CSS phase highlight + current operating state (incl. VFD from telemetry)
+- What-if panel with current-vs-scenario deltas ("simulation only" notice)
+- Optimization panel: recommended scenario, deltas, top-5 table, reasons
+- Real-data bar charts, risk cards, backend explanations, audit timeline, system status
+
+## 10. 🏗️ Current Architecture
+
+```
+Frontend (index.html, fetch only)
+  ↓
+FastAPI (app.py — routes, Pydantic validation, stores)
+  ↓
+Domain Models (WellTelemetry, snapshot/response schemas)
+  ↓
+Physics Engine (twin_physics.py)
+  ↓
+Risk Engine (deterministic indicators)
+  ↓
+Simulation (side-effect-free) → Optimizer (grid search)
+  ↓
+Audit (in-memory SHA-256 log)
+```
+
+```
+project/
+├── app.py
+├── twin_physics.py
+├── twin_optimize.py
+├── index.html
+├── test_app.py
+├── test_twin_physics.py
+├── test_twin_optimize.py
+├── solution.md
+├── requirements.txt
+├── Dockerfile
+└── docker-compose.yml
+```
+
+## 11. 🔌 API Endpoints
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/` | Health + SIH26120 metadata |
+| `POST` | `/api/v1/telemetry/ingest` | Validate + store well telemetry, attach twin summary (201) |
+| `GET` | `/api/v1/wells` | Well summaries sorted by `well_id` |
+| `GET` | `/api/v1/wells/{well_id}` | Latest well telemetry (404 when unknown) |
+| `GET` | `/api/v1/wells/{well_id}/twin` | Deterministic engineering snapshot |
+| `POST` | `/api/v1/wells/{well_id}/simulate` | Side-effect-free what-if + deltas |
+| `POST` | `/api/v1/wells/{well_id}/optimize` | Joint grid search: recommended + top-5 + reasons |
+| `GET` | `/api/v1/audit/logs` | SHA-256 audit records |
+| `POST` | `/api/v1/action/dispatch` | Legacy acknowledgement (no field commands) |
+| `GET` | `/docs` | Swagger UI |
+
+## 12. 🧪 Testing & Validation
+
+**56/56 tests passing** (`pytest -q`): 19 telemetry/API regression + 21 physics
+directional-behavior + 16 simulation/optimizer tests (side-effect freedom, determinism,
+bounds, sorting, edge cases, contracts). Additionally validated live: 38/38 end-to-end
+checks (full journey, physics directionals A–H, risk reproducibility, 243-grid,
+404/422 handling) and 9/9 dashboard contract checks.
+
+## 13. 🚀 Quick Start (Windows PowerShell)
+
+```powershell
+git clone https://github.com/sambhav-coder/Petro_Forge.git
+cd Petro_Forge
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r project/requirements.txt
+cd project
 python app.py
 ```
-- API Server: [http://127.0.0.1:8000](http://127.0.0.1:8000)
-- Interactive OpenAPI Docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-### Option 3: Run Automated Tests
-```bash
-cd "SIH26120 - Digital Twin for Well-to-Surface Optimization of Cyclic Steam Stimulation/project"
-pytest -q
+- API: http://127.0.0.1:8000 · Swagger: http://127.0.0.1:8000/docs
+- Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
+- Tests: `pytest -q` in `project/` (expect 56 passed)
+
+## 14. 🐳 Docker
+
+`Dockerfile` (Python 3.11-slim, uvicorn :8000) and `docker-compose.yml`
+(`api` :8000 + nginx dashboard preview :8080) exist and contain no stale assumptions:
+
+```powershell
+cd project
+docker-compose up --build
 ```
-Expected: 56 passed.
 
----
+> Not validated with a local Docker engine in this environment — reported honestly;
+> local `uvicorn` + `pytest` runs above are the verified paths.
 
-## 📂 Project Repository Structure
-```plaintext
-SIH26120 - Digital Twin for Well-to-Surface Optimization of Cyclic Steam Stimulation/
-├── README.md                           # Problem statement pitch & guide
-├── problem_statement.json              # Official SIH 2026 metadata
-└── project/
-    ├── index.html                      # Baghewala Digital Twin dashboard (real API integration)
-    ├── app.py                          # FastAPI routes, validation, well store, audit log
-    ├── twin_physics.py                 # Deterministic prototype engineering models
-    ├── twin_optimize.py                # What-if comparison + CSS×SRP grid optimizer
-    ├── test_app.py                     # Telemetry/API regression tests
-    ├── test_twin_physics.py            # Physics directional-behavior tests
-    ├── test_twin_optimize.py           # Simulation/optimizer tests
-    ├── solution.md                     # SIH 26120 technical solution document
-    ├── requirements.txt                # Python backend dependencies
-    ├── Dockerfile                      # API container definition
-    ├── docker-compose.yml              # API + dashboard preview orchestration
-    └── README.md                       # Run guide, API overview, assumptions, limitations
-```
+## 15. 📐 Prototype Assumptions & Limitations
+
+- Deterministic prototype-level model, **not calibrated** against Baghewala measurements
+- No Baghewala field data, SCADA feed, or validated results are claimed or included
+- SOR is a prototype t/bbl convention (steam tonnes / oil barrels over 30 days)
+- Energy coefficients, objective weights (0.40/0.25/0.15/0.20), fillage/efficiency
+  (0.85/0.75), risk bands are fixed prototype assumptions
+- VFD is recorded but **not** an active physics/optimization dimension
+- Storage is **in-memory** (restart wipes state); audit log capped at 100 records
+- No production control loop; **no trained ML model** in this baseline
+
+## 16. 🔐 Safety / Engineering Position
+
+PetroForge is **decision support, not control**: simulate/optimize endpoints never issue
+field commands and touch no equipment. Real deployment would require field data,
+calibration, engineering validation, operational constraints, safety review,
+domain-expert approval, and monitored deployment.
+
+## 17. 🗺️ Roadmap (future work — NOT implemented)
+
+- Phase 1 — Interactive 3D Digital Twin
+- Phase 2 — Historical/Public Data Platform
+- Phase 3 — ML Intelligence
+- Phase 4 — Physics + ML Hybrid Twin
+- Phase 5 — Advanced SRP/Pump Visualization
+- Phase 6 — CSS Intelligence
+- Phase 7 — Advanced Multi-objective Optimization
+- Phase 8 — Full Control-Room Experience
+- Phase 9 — Production-grade Deployment
+
+## 18. 🤝 Team / Contribution
+
+| Role | Member |
+|---|---|
+| — | *To be filled by the team* |
+
+No team information was found in the repository, so names are intentionally left blank
+rather than invented. Contributors: keep physics changes reproducible and covered by
+tests; never commit `.venv/`, caches, secrets, or IDE metadata (see `.gitignore`).
+
+## 19. 📜 License
+
+**No LICENSE file exists in the repository**, and the project originated from an
+existing base — so no license is added here and no ownership is claimed over every
+component. **Decision needed from the owner:** choose and add a license (e.g. MIT for
+your own code with third-party notices, or SIH-appropriate terms) before public reuse.
+
+## 20. 🏆 SIH Submission
+
+- Smart India Hackathon 2026 · Problem Statement **SIH26120**
+- Organization: **Oil India Limited** · Category: **Software** · Theme: **Smart Automation**
+
+## 21. 📚 Documentation
+
+- [Technical solution (`project/solution.md`)](./project/solution.md) — equations, provenance table, validation, demo flow
+- [Run guide (`project/README.md`)](./project/README.md) — API overview, assumptions, limitations
+- [Swagger UI](http://127.0.0.1:8000/docs) — live endpoint reference (backend running)
+- [Problem statement (`problem_statement.json`)](./problem_statement.json) — official SIH metadata
+
+## 22. ⭐ Why PetroForge
+
+Isolated steam tuning and isolated pump tuning leave the inflow/lift mismatch — and its
+SOR, energy, and mechanical costs — invisible. PetroForge moves that decision into one
+integrated well-to-surface workflow where every recommendation carries its numbers.
