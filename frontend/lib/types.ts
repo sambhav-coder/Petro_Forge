@@ -28,6 +28,10 @@ export interface PublicWellDetail {
   reservoir: string | null;
   status: string | null;
   status_as_of: string | null;
+  status_as_of_kind?: string | null;
+  temporal_note?: string | null;
+  source_publication_date?: string | null;
+  date_precision?: string | null;
   lift_method: string | null;
   css_status: string | null;
   css_cycle_count: number | null;

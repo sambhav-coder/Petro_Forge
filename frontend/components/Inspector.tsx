@@ -247,6 +247,66 @@ export default function Inspector({
                 ["Source", publicDetail.source_id ?? "—"],
               ]}
             />
+            {(publicDetail as unknown as { status_as_of_kind?: string; temporal_note?: string }).status_as_of_kind && (
+              <p className="text-[11px] font-mono text-amber-200/90">
+                Date semantics: {(publicDetail as unknown as { status_as_of_kind: string }).status_as_of_kind} — not a live reading.
+              </p>
+            )}
+            {(publicDetail as unknown as { temporal_note?: string }).temporal_note && (
+              <p className="text-[11px] text-slate-500">
+                {(publicDetail as unknown as { temporal_note: string }).temporal_note}
+              </p>
+            )}
+            {publicDetail.production.map((p, i) => {
+              const rec = p as unknown as Record<string, string | number | null>;
+              const isDerived = rec["value_kind"] === "midpoint_of_reported_range";
+              return (
+                <div key={i} className="rounded-lg border border-slate-700/50 bg-slate-800/40 px-2.5 py-2 space-y-1">
+                  <div className="text-[11px] font-mono text-slate-200">
+                    {isDerived
+                      ? `Reported: ${rec["reported_min_bopd"]}–${rec["reported_max_bopd"]} BOPD`
+                      : `Value: ${rec["value"]} ${rec["unit"] ?? ""}`}
+                  </div>
+                  {isDerived && (
+                    <div className="text-[11px] font-mono text-amber-200">
+                      Derived midpoint: {rec["derived_midpoint_bopd"]} BOPD (DERIVED — not a raw measurement)
+                    </div>
+                  )}
+                  {typeof rec["derivation"] === "string" && (
+                    <div className="text-[10px] font-mono text-slate-500">{rec["derivation"]}</div>
+                  )}
+                  {typeof rec["event_period"] === "string" && (
+                    <div className="text-[10px] font-mono text-slate-500">
+                      Period: {rec["event_period"]} ({typeof rec["date_precision"] === "string" ? rec["date_precision"] : ""} precision; exact date {rec["exact_date_available"] ? "available" : "not established"})
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {publicDetail.css.map((c, i) => {
+              const rec = c as unknown as Record<string, string | number | null | boolean>;
+              return (
+                <div key={i} className="rounded-lg border border-slate-700/50 bg-slate-800/40 px-2.5 py-2 space-y-1">
+                  <div className="text-[11px] font-mono text-slate-200">
+                    {typeof rec["cycle_id"] === "string" ? rec["cycle_id"] : "CSS event"}
+                    {typeof rec["event_period"] === "string" ? ` · ${rec["event_period"]}` : ""}
+                  </div>
+                  {typeof rec["source_publication_date"] === "string" && (
+                    <div className="text-[10px] font-mono text-slate-500">
+                      Source published {rec["source_publication_date"]} — publication date is not the event date.
+                    </div>
+                  )}
+                  {typeof rec["injection_end_note"] === "string" && (
+                    <div className="text-[10px] font-mono text-slate-500">{rec["injection_end_note"]}</div>
+                  )}
+                  {typeof rec["reported_injection_days"] === "number" && (
+                    <div className="text-[10px] font-mono text-slate-500">
+                      Reported ~{rec["reported_injection_days"]} days of injection; exact start/end not established — not continuous telemetry.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {publicDetail.notes && (
               <p className="text-[11px] text-slate-400">{publicDetail.notes}</p>
             )}

@@ -1,7 +1,165 @@
-{"description": "Dataset-level catalog: what exists, where it lives, what it can/can't support. No raw third-party data committed.", "datasets": [{"access": "metadata only in repo; download separately under repository terms", "cannot_support": ["Baghewala calibration", "Baghewala well behavior"], "can_support": ["Phase-3 rod-failure method design", "stress-based failure location concepts"], "dataset_id": "mendeley_srp_failure", "name": "Mendeley sucker rod failure data (DOI 10.17632/42jnkpp5tv.1)", "provenance_class": "PUBLIC_REFERENCE", "source_id": "mendeley_srp_failure_2022", "why_relevant": "Only openly catalogued rod/tubing failure dataset found; directly relevant to future failure modeling."}, {"access": "open data platform (Equinor/Databricks); NOT in repo", "cannot_support": ["Heavy-oil behavior", "Baghewala volumes", "CSS/SRP analysis"], "can_support": ["Production time-series pipeline patterns", "forecasting experiment design for Phase 3"], "dataset_id": "volve_production", "name": "Equinor Volve open field data (2008-2016)", "provenance_class": "PUBLIC_REFERENCE", "source_id": "equinor_volve_open", "why_relevant": "Most complete open production time-series release; teaches pipeline shapes, not Baghewala physics."}, {"access": "papers only; no raw cards in repo", "cannot_support": ["Training data", "Baghewala labels"], "can_support": ["Dynamometer-card taxonomy", "class-imbalance handling", "benchmark expectations for Phase 3"], "dataset_id": "srp_dynamometer_literature", "name": "SRP dynamometer-card literature (Mossoro, China, methods repo)", "provenance_class": "PUBLIC_REFERENCE", "source_id": "pmc_srp_ml_mossoro+mdpi_sensors_srp_2020+bojanmar_srp_dynamogram", "why_relevant": "Establishes what SRP failure data looks like and how the field models it."}, {"access": "generated on demand: project.data.synthetic.generate(seed=42)", "cannot_support": ["Calibration", "Field claims", "ML production training"], "can_support": ["Pipeline tests", "API demos", "feature-matrix shape validation for future ML"], "dataset_id": "synthetic_baghewala_v1", "name": "Synthetic Baghewala-constrained telemetry (seeded)", "provenance_class": "SYNTHETIC_BAGHEWALA", "source_id": "synthetic_baghewala_generator", "why_relevant": "Only granular well-level records available; every record labeled synthetic with generator version + seed."}, {"access": "public aggregate facts in provenance.json; no time series", "cannot_support": ["Well-by-well telemetry", "Time-series training", "Calibration time series"], "can_support": ["Constraint bounds for synthetic data", "Dashboard context", "Plausibility windows"], "dataset_id": "baghewala_field_evidence", "name": "Baghewala field evidence (aggregates)", "provenance_class": "BAGHEWALA_FIELD", "source_id": "oilindia_rajasthan_fields+et_rajasthan_record_2026+sih26120_problem_statement", "why_relevant": "Only Baghewala-specific public evidence class available."}],   "telemetry_availability_statement": "Public Baghewala data includes field-level information and a subset of well-specific historical/status/CSS/production records (5 verified wells: BGW-01, BGW-04, BGW-08, BGW-17, BGW-40; see baghewala_well_coverage.json). Complete continuous well-by-well SCADA telemetry was not found publicly.",
-  "public_well_coverage": {
-    "total_verified_wells": 5,
-    "well_ids": ["BGW-01", "BGW-04", "BGW-08", "BGW-17", "BGW-40"],
-    "telemetry_data": false,
-    "detail_file": "baghewala_well_coverage.json"
-  }, "version": "1.0"}
+{
+ "description": "Dataset-level catalog: what exists, where it lives, what it can/can't support. No raw third-party data committed.",
+ "datasets": [
+  {
+   "access": "metadata only in repo; download separately under repository terms",
+   "cannot_support": [
+    "Baghewala calibration",
+    "Baghewala well behavior"
+   ],
+   "can_support": [
+    "Phase-3 rod-failure method design",
+    "stress-based failure location concepts"
+   ],
+   "dataset_id": "mendeley_srp_failure",
+   "name": "Mendeley sucker rod failure data (DOI 10.17632/42jnkpp5tv.1)",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "source_id": "mendeley_srp_failure_2022",
+   "why_relevant": "Only openly catalogued rod/tubing failure dataset found; directly relevant to future failure modeling."
+  },
+  {
+   "access": "open data platform (Equinor/Databricks); NOT in repo",
+   "cannot_support": [
+    "Heavy-oil behavior",
+    "Baghewala volumes",
+    "CSS/SRP analysis"
+   ],
+   "can_support": [
+    "Production time-series pipeline patterns",
+    "forecasting experiment design for Phase 3"
+   ],
+   "dataset_id": "volve_production",
+   "name": "Equinor Volve open field data (2008-2016)",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "source_id": "equinor_volve_open",
+   "why_relevant": "Most complete open production time-series release; teaches pipeline shapes, not Baghewala physics."
+  },
+  {
+   "access": "papers only; no raw cards in repo",
+   "cannot_support": [
+    "Training data",
+    "Baghewala labels"
+   ],
+   "can_support": [
+    "Dynamometer-card taxonomy",
+    "class-imbalance handling",
+    "benchmark expectations for Phase 3"
+   ],
+   "dataset_id": "srp_dynamometer_literature",
+   "name": "SRP dynamometer-card literature (Mossoro, China, methods repo)",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "source_id": "pmc_srp_ml_mossoro+mdpi_sensors_srp_2020+bojanmar_srp_dynamogram",
+   "why_relevant": "Establishes what SRP failure data looks like and how the field models it."
+  },
+  {
+   "access": "generated on demand: project.data.synthetic.generate(seed=42)",
+   "cannot_support": [
+    "Calibration",
+    "Field claims",
+    "ML production training"
+   ],
+   "can_support": [
+    "Pipeline tests",
+    "API demos",
+    "feature-matrix shape validation for future ML"
+   ],
+   "dataset_id": "synthetic_baghewala_v1",
+   "name": "Synthetic Baghewala-constrained telemetry (seeded)",
+   "provenance_class": "SYNTHETIC_BAGHEWALA",
+   "source_id": "synthetic_baghewala_generator",
+   "why_relevant": "Only granular well-level records available; every record labeled synthetic with generator version + seed."
+  },
+  {
+   "access": "public aggregate facts in provenance.json; no time series",
+   "cannot_support": [
+    "Well-by-well telemetry",
+    "Time-series training",
+    "Calibration time series",
+    "Per-well SPM/VFD/pressure/temperature streams",
+    "Attachment of field aggregates to individual wells"
+   ],
+   "can_support": [
+    "Constraint bounds for synthetic data",
+    "Dashboard context",
+    "Plausibility windows"
+   ],
+   "dataset_id": "baghewala_field_evidence",
+   "name": "Baghewala field evidence (field-level aggregates and context)",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "source_id": "oilindia_rajasthan_fields+et_rajasthan_record_2026+sih26120_problem_statement",
+   "why_relevant": "Only Baghewala-specific public evidence class available.",
+   "scope": "FIELD_LEVEL"
+  },
+  {
+   "dataset_id": "baghewala_well_public",
+   "name": "Verified Baghewala well-specific public records (5 publicly verified well records)",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "scope": "WELL_LEVEL",
+   "source_id": "telegraph_oil_begin_drill_2016+aapg_baghewala1_1995+ogj_css_start_2018+business_standard_css_2018+toi_css_jaipur_2019+toi_record_output_2026+nakasawa_baghewala_css_2022+oilindia_rajasthan_fields",
+   "access": "project/data/public/*.json + project/data/public/baghewala_well_coverage.json",
+   "can_support": [
+    "Well registry display",
+    "Historical/status context per well",
+    "Sparse CSS/production evidence display"
+   ],
+   "cannot_support": [
+    "Continuous telemetry",
+    "Time-series training",
+    "ML training labels",
+    "Current-status claims",
+    "Per-well SPM/VFD/pressure/temperature streams"
+   ],
+   "why_relevant": "Only verified well-specific Baghewala evidence. Baghewala field contains additional wells; only wells with sufficient publicly verifiable well-specific evidence are represented in this public registry. Well-specific production is sparse (1 range-derived observation for BGW-08)."
+  },
+  {
+   "dataset_id": "baghewala_derived_values",
+   "name": "Values derived from Baghewala source observations (labeled DERIVED)",
+   "provenance_class": "DERIVED",
+   "scope": "DERIVED",
+   "source_id": "toi_css_jaipur_2019",
+   "access": "Embedded in project/data/public/baghewala_production.json with derivation metadata",
+   "can_support": [
+    "Display with explicit derived label",
+    "Prototype plausibility context"
+   ],
+   "cannot_support": [
+    "Raw-measurement claims",
+    "ML training labels",
+    "Time-series points",
+    "Calibration"
+   ],
+   "why_relevant": "Example: BGW-08 85 BOPD is the arithmetic midpoint of the reported 80-90 BOPD range (derivation recorded, raw range recoverable). Derived values must never be presented as raw measurements."
+  }
+ ],
+ "telemetry_availability_statement": "Public Baghewala data includes field-level information and 5 publicly verified well records (BGW-01, BGW-04, BGW-08, BGW-17, BGW-40; see project/data/public/baghewala_well_coverage.json). Complete continuous well-by-well SCADA telemetry was not found publicly: no per-well continuous SPM/VFD/pressure/temperature streams were found. Well-specific production is sparse (one reported 80-90 BOPD range for BGW-08, stored as derived midpoint 85 BOPD). Field-level values must never be attached to individual wells. Synthetic telemetry must never be represented as measured Baghewala telemetry.",
+ "public_well_coverage": {
+  "total_verified_wells": 5,
+  "well_ids": [
+   "BGW-01",
+   "BGW-04",
+   "BGW-08",
+   "BGW-17",
+   "BGW-40"
+  ],
+  "telemetry_data": false,
+  "detail_file": "project/data/public/baghewala_well_coverage.json",
+  "catalog_mirror": "project/data_catalog/baghewala_well_coverage.json",
+  "note": "Baghewala field contains additional wells; only wells with sufficient publicly verifiable well-specific evidence are represented in this public registry."
+ },
+ "version": "1.0",
+ "provenance_classes": {
+  "BAGHEWALA_FIELD": "Measured/reported specifically at Baghewala (field-level aggregates or verified well-specific history).",
+  "BAGHEWALA_WELL_PUBLIC": "Logical subset of BAGHEWALA_FIELD: verified well-specific historical/status/CSS/production evidence (dataset baghewala_well_public). Not a separate provenance class in code; scope=WELL_LEVEL distinguishes it.",
+  "PUBLIC_REFERENCE": "Legitimate external datasets/methodology references that are NOT Baghewala measurements.",
+  "SYNTHETIC_BAGHEWALA": "Generated telemetry for demos/testing only; never measured Baghewala data.",
+  "DERIVED": "Values calculated from another source observation (e.g. BGW-08 85 BOPD midpoint); raw observation must remain recoverable.",
+  "UNKNOWN": "Provenance cannot be established; includes live operator-supplied telemetry via /telemetry/ingest until a source is declared."
+ },
+ "integrity_rules": [
+  "Field-level values must never be attached to individual wells.",
+  "Synthetic telemetry must never be represented as measured Baghewala telemetry.",
+  "Derived values must never be presented as raw measurements.",
+  "Publication dates must never be used as operational event dates.",
+  "Public records must never silently become live telemetry."
+ ]
+}

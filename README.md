@@ -188,7 +188,7 @@ project/
 |---|---|---|
 | `GET` | `/` | Health + SIH26120 metadata |
 | `POST` | `/api/v1/telemetry/ingest` | Validate + store well telemetry, attach twin summary (201) |
-| `GET` | `/api/v1/wells` | Merged list: telemetry + 5 verified public Baghewala wells (bootstrap) |
+| `GET` | `/api/v1/wells` | Merged list: telemetry + 5 publicly verified well records (bootstrap) |
 | `GET` | `/api/v1/wells/{well_id}` | Telemetry, or public-record envelope (`telemetry: null`) |
 | `GET` | `/api/v1/wells/{well_id}/twin` | Snapshot; `INSUFFICIENT_PUBLIC_TELEMETRY` for public-only wells |
 | `POST` | `/api/v1/wells/{well_id}/simulate` | Side-effect-free what-if + deltas |
@@ -239,7 +239,15 @@ docker-compose up --build
 ## 15. 📐 Prototype Assumptions & Limitations
 
 - Deterministic prototype-level model, **not calibrated** against Baghewala measurements
-- No Baghewala field data, SCADA feed, or validated results are claimed or included
+- Public Baghewala data: field-level context + 5 publicly verified well records
+  (historical/status/CSS/sparse production evidence); **no verified complete
+  continuous well-by-well SCADA telemetry was found** (no per-well continuous
+  SPM/VFD/pressure/temperature streams; no complete well census, CSS parameter
+  history, SRP telemetry, or continuous production streams)
+- Synthetic data is for demos/pipeline testing only — NOT measured Baghewala
+  data, calibration data, or evidence of actual well behavior
+- Derived values (e.g. BGW-08 85 BOPD midpoint of reported 80–90 BOPD) are
+  labeled DERIVED, never raw measurements
 - SOR is a prototype t/bbl convention (steam tonnes / oil barrels over 30 days)
 - Energy coefficients, objective weights (0.40/0.25/0.15/0.20), fillage/efficiency
   (0.85/0.75), risk bands are fixed prototype assumptions

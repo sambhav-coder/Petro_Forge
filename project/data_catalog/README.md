@@ -10,11 +10,17 @@
 
 - **Baghewala aggregates** (rates, well counts, geology, equipment) from OIL,
   press reports of officials, government records, peer-reviewed geology papers.
-- **Verified Baghewala well records (5 wells)**: BGW-01 (discovery, 1991-94
-  tests), BGW-04 (1991-94 tests), BGW-08 (first CSS Dec 2018, 80-90 bopd
-  post-pilot), BGW-17 (2022 injection completion), BGW-40 (fishbones) —
-  see `baghewala_well_coverage.json`. Status/CSS/production only; **no
-  continuous telemetry** (all `telemetry_data: false`).
+- **5 publicly verified well records**: BGW-01 (discovery, 1991-94
+  tests), BGW-04 (1991-94 tests), BGW-08 (first CSS Dec 2018, reported
+  80–90 bopd post-pilot with derived midpoint 85 BOPD), BGW-17 (2022
+  injection completion, ~17 days reported, exact dates not established),
+  BGW-40 (fishbones) — Baghewala field contains additional wells; only
+  wells with sufficient publicly verifiable well-specific evidence are
+  represented in this public registry — see
+  `../data/public/baghewala_well_coverage.json` (mirrored here as
+  `baghewala_well_coverage.json`). 5 verified well records with
+  historical/status evidence; **no continuous telemetry** (all
+  `telemetry_data: false`, all `time_series_safe: false`).
 - **Public reference datasets/papers** (Mendeley SRP failure data, Volve open
   field data, dynamometer-card literature) for *methods*, never for Baghewala facts.
 - **Synthetic Baghewala-constrained telemetry** generated on demand

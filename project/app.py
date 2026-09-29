@@ -494,8 +494,11 @@ async def ingest_telemetry(payload: WellTelemetry):
 
 # ---------------- Priority 1 recovery: public Baghewala bootstrap ----------------
 # Verified public registry loads at startup so the twin never opens empty.
-# Telemetry wells (WELL_STORE) take precedence in merged views; public
-# records are never upgraded into telemetry.
+# 5 publicly verified well records (Baghewala field contains additional
+# wells; only wells with sufficient publicly verifiable well-specific
+# evidence are represented here). Telemetry wells (WELL_STORE) take
+# precedence in merged views; public records are never upgraded into
+# telemetry.
 _PUBLIC_BOOT = bootstrap_public_data()
 PUBLIC_WELLS: Dict[str, Dict[str, Any]] = _PUBLIC_BOOT["wells"]
 PUBLIC_CSS: List[Dict[str, Any]] = _PUBLIC_BOOT["css"]
@@ -507,7 +510,7 @@ BOOTSTRAP_REPORT: Dict[str, Any] = _PUBLIC_BOOT["report"]
 
 @app.get("/api/v1/wells", tags=["Wells"])
 async def list_wells():
-    """Merged well list: live telemetry wells + verified public Baghewala wells.
+    """Merged well list: live telemetry wells + 5 publicly verified well records.
 
     Public entries carry null telemetry fields (never fabricated) and
     provenance BAGHEWALA_FIELD / data_status PUBLIC_FIELD_RECORD.
@@ -523,7 +526,7 @@ async def list_wells():
 @app.get("/api/v1/wells/{well_id}", tags=["Wells"])
 async def get_well(well_id: str):
     """Latest telemetry for ingested wells; public-record envelope for
-    verified Baghewala wells without telemetry. 404 when unknown."""
+    publicly verified well records without telemetry. 404 when unknown."""
     record = WELL_STORE.get(well_id)
     if record is not None:
         return record
@@ -711,6 +714,29 @@ async def data_catalog():
     return doc
 
 
+@app.get("/api/v1/data/coverage", tags=["Data Foundation"])
+async def data_coverage():
+    """Canonical public well-coverage matrix (5 publicly verified well records).
+
+    Authoritative source: project/data/public/baghewala_well_coverage.json.
+    Baghewala field contains additional wells; only wells with sufficient
+    publicly verifiable well-specific evidence are represented here.
+    """
+    import os as _os
+    path = _os.path.join(
+        _os.path.dirname(_os.path.abspath(__file__)), "data", "public",
+        "baghewala_well_coverage.json",
+    )
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Coverage file unavailable.",
+        )
+
+
 @app.get("/api/v1/data/quality", tags=["Data Foundation"])
 async def data_quality():
     """Aggregate quality-status counts observed by the ingestion pipeline."""
@@ -743,6 +769,8 @@ async def data_summary():
             "public_css_records": len(PUBLIC_CSS),
             "public_production_records": len(PUBLIC_PROD_WELL) + len(PUBLIC_PROD_FIELD),
             "rejected_records": BOOTSTRAP_REPORT.get("rejected_records", 0),
+            "coverage_valid": BOOTSTRAP_REPORT.get("coverage_valid", False),
+            "coverage_file": "project/data/public/baghewala_well_coverage.json",
         },
         "data_status": {
             "public_field_records": len(PUBLIC_WELLS),
