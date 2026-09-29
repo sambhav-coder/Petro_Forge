@@ -262,3 +262,140 @@ export interface TrendAnalysis {
   max_value?: number;
   mean_value?: number;
 }
+
+/* Priority 3: ML Intelligence Engine types */
+export interface MLStatus {
+  status: "OPERATIONAL" | "UNAVAILABLE";
+  version: string;
+  available_models: Record<string, MLModelInfo>;
+  registry_summary: {
+    total_models: number;
+    by_status: Record<string, number>;
+    by_task: Record<string, number>;
+    by_eligibility: Record<string, number>;
+  };
+  datasets: number;
+  timestamp: string;
+  reason?: string;
+}
+
+export interface MLModelInfo {
+  available: boolean;
+  model_id: string | null;
+  model_version: string | null;
+  status: string;
+  eligibility: string;
+  limitations: string[];
+}
+
+export interface MLForecastRequest {
+  well_id: string;
+  horizon_days?: number;
+  features?: Record<string, unknown>;
+  model_id?: string;
+  model_version?: string;
+}
+
+export interface MLForecastResult {
+  well_id: string;
+  forecast_horizon_days: number;
+  forecasted_values: number[];
+  forecast_timestamps: string[];
+  baseline_values?: number[];
+  metrics: Record<string, number>;
+  confidence_intervals?: Array<{ lower: number; upper: number }>;
+  trend_direction?: string;
+  data_quality: string;
+  model_id: string;
+  model_version: string;
+  limitations: string[];
+  insufficient_data: boolean;
+  insufficient_reason?: string;
+}
+
+export interface MLAnomalyRequest {
+  variable: string;
+  value: number;
+  well_id?: string;
+  timestamp?: string;
+  historical_window?: number;
+  model_id?: string;
+  model_version?: string;
+}
+
+export interface MLAnomalyResult {
+  variable: string;
+  observed_value: number;
+  expected_value?: number;
+  reference_value?: number;
+  anomaly_score: number;
+  status: "NORMAL" | "WARNING" | "ANOMALY" | "INSUFFICIENT_CONTEXT";
+  method: string;
+  threshold: number;
+  timestamp: string;
+  well_id?: string;
+  provenance: string;
+  explanation: string;
+  data_quality: string;
+  model_id: string;
+  model_version: string;
+  limitations: string[];
+  insufficient_data: boolean;
+  insufficient_reason?: string;
+}
+
+export interface MLHealthRequest {
+  well_id: string;
+  features?: Record<string, unknown>;
+  model_id?: string;
+  model_version?: string;
+}
+
+export interface MLHealthResult {
+  well_id: string;
+  health_status: "HEALTHY" | "DEGRADED" | "AT_RISK" | "INSUFFICIENT_DATA";
+  health_score: number;
+  contributing_factors: Array<{
+    factor: string;
+    value: number;
+    status: string;
+    contribution: number;
+  }>;
+  spm_status?: string;
+  stroke_status?: string;
+  load_status?: string;
+  fillage_status?: string;
+  data_quality: string;
+  model_id: string;
+  model_version: string;
+  limitations: string[];
+  insufficient_data: boolean;
+  insufficient_reason?: string;
+}
+
+export interface MLFailureRequest {
+  well_id: string;
+  features?: Record<string, unknown>;
+  model_id?: string;
+  model_version?: string;
+}
+
+export interface MLFailureResult {
+  well_id: string;
+  failure_probability: number | null;
+  risk_level?: string;
+  failure_class?: string;
+  time_to_failure_days?: number;
+  contributing_factors: Array<{
+    factor: string;
+    value: number;
+    contribution: number;
+  }>;
+  confidence: number | null;
+  data_quality: string;
+  model_id: string;
+  model_version: string;
+  limitations: string[];
+  insufficient_data: boolean;
+  insufficient_reason?: string;
+}

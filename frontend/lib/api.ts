@@ -1,4 +1,4 @@
-import type { DataSummary, OptimizeResponse, TwinSnapshot, WellsResponse, WellTelemetry, HistoryResponse, WellCoverageSummary } from "./types";
+import type { DataSummary, OptimizeResponse, TwinSnapshot, WellsResponse, WellTelemetry, HistoryResponse, WellCoverageSummary, MLStatus, MLForecastRequest, MLForecastResult, MLAnomalyRequest, MLAnomalyResult, MLHealthRequest, MLHealthResult, MLFailureRequest, MLFailureResult } from "./types";
 
 export function apiBase(): string {
   const raw =
@@ -64,4 +64,27 @@ export const api = {
     limit?: number;
   }) => request<HistoryResponse>(`/api/v1/history?${new URLSearchParams(params as Record<string, string>).toString()}`),
   historyCoverage: (wellId: string) => request<WellCoverageSummary>(`/api/v1/history/coverage/${encodeURIComponent(wellId)}`),
+  
+  // Priority 3: ML Intelligence API
+  mlStatus: () => request<MLStatus>("/api/v1/ml/status"),
+  mlForecast: (request: MLForecastRequest) =>
+    request<MLForecastResult>("/api/v1/ml/forecast", {
+      method: "POST",
+      body: JSON.stringify(request),
+    }),
+  mlAnomaly: (request: MLAnomalyRequest) =>
+    request<MLAnomalyResult>("/api/v1/ml/anomaly", {
+      method: "POST",
+      body: JSON.stringify(request),
+    }),
+  mlHealth: (request: MLHealthRequest) =>
+    request<MLHealthResult>("/api/v1/ml/srp-health", {
+      method: "POST",
+      body: JSON.stringify(request),
+    }),
+  mlFailure: (request: MLFailureRequest) =>
+    request<MLFailureResult>("/api/v1/ml/failure-risk", {
+      method: "POST",
+      body: JSON.stringify(request),
+    }),
 };

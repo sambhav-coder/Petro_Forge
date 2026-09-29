@@ -46,11 +46,46 @@ from data.pipeline import ingest_telemetry_batch
 from data.provenance import ProvenanceClass
 from data.repository import InMemoryRepository
 
+# Priority 3: ML Intelligence Engine
+try:
+    from ml import (
+        InferenceEngine,
+        ModelRegistry,
+        DatasetInventory,
+        DatasetValidator,
+        ExplainabilityEngine,
+        get_provenance_tracker,
+        MLEligibility,
+        ModelTask,
+        ModelStatus,
+    )
+    from ml.schemas import (
+        PredictionRequest,
+        PredictionResponse,
+        DatasetValidationReport,
+    )
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    # Create stubs for type hints
+    InferenceEngine = None
+    ModelRegistry = None
+    DatasetInventory = None
+    DatasetValidator = None
+    ExplainabilityEngine = None
+    get_provenance_tracker = None
+    MLEligibility = None
+    ModelTask = None
+    ModelStatus = None
+    PredictionRequest = None
+    PredictionResponse = None
+    DatasetValidationReport = None
+
 
 app = FastAPI(
     title="SIH26120 - Digital Twin for Well-to-Surface Optimization of Cyclic Steam Stimulation (CSS) and Sucker Rod Pump (SRP) Operations for Heavy Oil Wells of Baghewala Field.",
-    description="Well-to-surface Digital Twin for Oil India Limited Baghewala heavy-oil wells (CSS + SRP). Block 3: what-if simulation and joint CSSxSRP optimization over deterministic prototype physics.",
-    version="3.2.0-block3",
+    description="Well-to-surface Digital Twin for Oil India Limited Baghewala heavy-oil wells (CSS + SRP). Block 3: what-if simulation and joint CSSxSRP optimization over deterministic prototype physics. Priority 3: ML Intelligence Engine with data validation, anomaly detection, and forecasting framework.",
+    version="3.3.0-priority3",
 )
 
 app.add_middleware(
@@ -995,6 +1030,350 @@ async def get_history_stats():
             }
             for name, spec in history_engine.VARIABLE_REGISTRY.items()
         },
+    }
+
+
+# ---------------- Priority 3: ML Intelligence Engine ----------------
+# ML API endpoints for forecasting, anomaly detection, SRP health, and failure prediction.
+
+if ML_AVAILABLE:
+    _ML_INFERENCE_ENGINE = InferenceEngine()
+    _ML_REGISTRY = ModelRegistry()
+    _ML_DATASET_INVENTORY = DatasetInventory()
+    _ML_DATASET_VALIDATOR = DatasetValidator()
+    _ML_EXPLAINABILITY_ENGINE = ExplainabilityEngine()
+    _ML_PROVENANCE_TRACKER = get_provenance_tracker()
+else:
+    _ML_INFERENCE_ENGINE = None
+    _ML_REGISTRY = None
+    _ML_DATASET_INVENTORY = None
+    _ML_DATASET_VALIDATOR = None
+    _ML_EXPLAINABILITY_ENGINE = None
+    _ML_PROVENANCE_TRACKER = None
+
+
+class MLPredictionRequest(BaseModel):
+    """ML prediction request."""
+    task: str = Field(..., description="ML task: production_forecast, anomaly_detection, srp_health, failure_risk")
+    well_id: Optional[str] = None
+    features: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: Optional[str] = None
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+    return_explanations: bool = False
+
+
+class MLForecastRequest(BaseModel):
+    """Production forecast request."""
+    well_id: str = Field(..., min_length=1)
+    horizon_days: int = Field(default=30, ge=1, le=365)
+    features: Dict[str, Any] = Field(default_factory=dict)
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+
+
+class MLAnomalyRequest(BaseModel):
+    """Anomaly detection request."""
+    variable: str = Field(..., min_length=1)
+    value: float
+    well_id: Optional[str] = None
+    timestamp: Optional[str] = None
+    historical_window: int = Field(default=30, ge=1, le=365)
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+
+
+class MLHealthRequest(BaseModel):
+    """SRP health assessment request."""
+    well_id: str = Field(..., min_length=1)
+    features: Dict[str, Any] = Field(default_factory=dict)
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+
+
+class MLFailureRequest(BaseModel):
+    """Failure prediction request."""
+    well_id: str = Field(..., min_length=1)
+    features: Dict[str, Any] = Field(default_factory=dict)
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+
+
+@app.get("/api/v1/ml/status", tags=["ML Intelligence"])
+async def get_ml_status():
+    """ML system status and available models."""
+    if not ML_AVAILABLE:
+        return {
+            "status": "UNAVAILABLE",
+            "version": "1.0",
+            "available_models": {},
+            "registry_summary": {},
+            "datasets": 0,
+            "timestamp": _utc_now_iso(),
+            "reason": "ML module not available",
+        }
+    return {
+        "status": "OPERATIONAL",
+        "version": "1.0",
+        "available_models": _ML_INFERENCE_ENGINE.get_available_models(),
+        "registry_summary": _ML_REGISTRY.get_registry_summary(),
+        "datasets": len(_ML_DATASET_INVENTORY.list_datasets()),
+        "timestamp": _utc_now_iso(),
+    }
+
+
+@app.get("/api/v1/ml/models", tags=["ML Intelligence"])
+async def list_ml_models(
+    task: Optional[str] = None,
+    status: Optional[str] = None,
+):
+    """List registered ML models with optional filtering."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    models = _ML_REGISTRY.list_models(task=task, status=status)
+    return {
+        "total": len(models),
+        "models": [m.model_dump() for m in models],
+    }
+
+
+@app.post("/api/v1/ml/predict", tags=["ML Intelligence"])
+async def ml_predict(request: MLPredictionRequest):
+    """Unified ML prediction endpoint.
+    
+    Routes to appropriate task-specific model based on request task.
+    Returns explicit insufficient-data state when models are unavailable.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    try:
+        task = ModelTask(request.task)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid task: {request.task}. Valid tasks: {[t.value for t in ModelTask]}",
+        )
+    
+    ml_request = PredictionRequest(
+        task=task,
+        well_id=request.well_id,
+        features=request.features,
+        timestamp=request.timestamp,
+        model_id=request.model_id,
+        model_version=request.model_version,
+        return_explanations=request.return_explanations,
+    )
+    
+    response = _ML_INFERENCE_ENGINE.predict(ml_request)
+    return response
+
+
+@app.post("/api/v1/ml/forecast", tags=["ML Intelligence"])
+async def ml_forecast(request: MLForecastRequest):
+    """Production forecasting endpoint.
+    
+    Returns explicit insufficient-data state when forecasting model unavailable.
+    Baghewala public data is insufficient for continuous production forecasting.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    response = _ML_INFERENCE_ENGINE.forecasting_model.forecast(
+        well_id=request.well_id,
+        features=request.features,
+        model_id=request.model_id,
+        model_version=request.model_version,
+        horizon_days=request.horizon_days,
+    )
+    return response
+
+
+@app.post("/api/v1/ml/anomaly", tags=["ML Intelligence"])
+async def ml_anomaly(request: MLAnomalyRequest):
+    """Anomaly detection endpoint.
+    
+    Detects anomalies in operational parameters using statistical methods.
+    Returns explicit insufficient-data state when historical context unavailable.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    response = _ML_INFERENCE_ENGINE.anomaly_detector.detect(
+        variable=request.variable,
+        value=request.value,
+        well_id=request.well_id,
+        timestamp=request.timestamp,
+        model_id=request.model_id,
+        model_version=request.model_version,
+    )
+    return response
+
+
+@app.post("/api/v1/ml/srp-health", tags=["ML Intelligence"])
+async def ml_srp_health(request: MLHealthRequest):
+    """SRP/pump health assessment endpoint.
+    
+    Returns explicit insufficient-data state when SRP operational data unavailable.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    response = _ML_INFERENCE_ENGINE.srp_health_model.assess(
+        well_id=request.well_id,
+        features=request.features,
+        model_id=request.model_id,
+        model_version=request.model_version,
+    )
+    return response
+
+
+@app.post("/api/v1/ml/failure-risk", tags=["ML Intelligence"])
+async def ml_failure_risk(request: MLFailureRequest):
+    """Failure prediction endpoint.
+    
+    Returns explicit insufficient-data state when failure model unavailable.
+    Baghewala public data lacks labeled failure data for training.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    response = _ML_INFERENCE_ENGINE.failure_model.predict(
+        well_id=request.well_id,
+        features=request.features,
+        model_id=request.model_id,
+        model_version=request.model_version,
+    )
+    return response
+
+
+@app.get("/api/v1/ml/datasets", tags=["ML Intelligence"])
+async def list_ml_datasets():
+    """List ML datasets and their eligibility."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    datasets = _ML_DATASET_INVENTORY.list_datasets()
+    return {
+        "total": len(datasets),
+        "datasets": [
+            {
+                "name": d.name,
+                "source": d.source.value,
+                "domain": d.domain,
+                "rows": d.rows,
+                "features": d.features,
+                "time_information": d.time_information,
+                "failure_labels": d.failure_labels,
+            }
+            for d in datasets
+        ],
+    }
+
+
+@app.get("/api/v1/ml/datasets/{dataset_name}/eligibility", tags=["ML Intelligence"])
+async def get_dataset_eligibility(dataset_name: str, task: str):
+    """Get ML eligibility assessment for a dataset."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    report = _ML_DATASET_INVENTORY.assess_eligibility(dataset_name, task)
+    return report.model_dump()
+
+
+@app.get("/api/v1/ml/models/{model_id}/explainability", tags=["ML Intelligence"])
+async def get_model_explainability(model_id: str, top_k: int = 5):
+    """Get feature importance for a model.
+    
+    Returns top contributing features and their importance scores.
+    Distinguishes MODEL ASSOCIATION from PHYSICAL CAUSATION.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    model = _ML_REGISTRY.get_model(model_id)
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Model '{model_id}' not found",
+        )
+    
+    # Note: This is a placeholder - actual implementation would need
+    # the trained model object, not just metadata
+    return {
+        "model_id": model_id,
+        "model_type": model.task,
+        "feature_importance": [],
+        "limitations": [
+            "Feature importance requires trained model object",
+            "Feature importance indicates association, not causation",
+        ],
+    }
+
+
+@app.get("/api/v1/ml/provenance/summary", tags=["ML Intelligence"])
+async def get_provenance_summary():
+    """Get summary of ML provenance tracking."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    return _ML_PROVENANCE_TRACKER.get_provenance_summary()
+
+
+@app.get("/api/v1/ml/provenance/prediction/{prediction_id}", tags=["ML Intelligence"])
+async def get_prediction_provenance(prediction_id: str):
+    """Get full provenance for a specific prediction."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    return _ML_PROVENANCE_TRACKER.export_provenance(prediction_id)
+
+
+@app.get("/api/v1/ml/provenance/feature/{feature_name}", tags=["ML Intelligence"])
+async def get_feature_lineage(feature_name: str):
+    """Trace the lineage of a feature back to source columns."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    lineage = _ML_PROVENANCE_TRACKER.trace_lineage(feature_name)
+    return {
+        "feature_name": feature_name,
+        "lineage": [
+            {
+                "feature_name": prov.feature_name,
+                "source_columns": prov.source_columns,
+                "method": prov.method,
+                "parameters": prov.parameters,
+                "derived_from": prov.derived_from,
+                "timestamp": prov.timestamp,
+            }
+            for prov in lineage
+        ],
     }
 
 

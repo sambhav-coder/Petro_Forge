@@ -1,0 +1,20 @@
+# ML Model Artifacts Directory
+
+This directory stores trained model artifacts and metadata.
+
+## Structure
+- registry.json: Model registry metadata
+- models/: Trained model files (joblib/pickle)
+- metadata/: Model training metadata and manifests
+
+## Security Note
+- Never load arbitrary user-provided pickle/joblib files
+- Validate model IDs and versions before loading
+- Artifact paths are validated to prevent path traversal
+- No credentials are stored in artifacts
+
+## Policy
+- Models are only promoted after passing quality gates
+- Insufficient data models are marked as UNAVAILABLE
+- Baghewala public data is not used for continuous forecasting
+- Synthetic data is never mixed with real data without labeling

@@ -14,6 +14,11 @@ import type {
   WellTelemetry,
   HistoryResponse,
   WellCoverageSummary,
+  MLStatus,
+  MLForecastResult,
+  MLAnomalyResult,
+  MLHealthResult,
+  MLFailureResult,
 } from "@/lib/types";
 
 type Tab = "OVERVIEW" | "TELEMETRY" | "PHYSICS" | "HISTORY" | "ANALYTICS" | "ML" | "OPTIMIZATION";
@@ -164,6 +169,12 @@ export default function Inspector({
   const [historyData, setHistoryData] = useState<HistoryResponse | null>(null);
   const [coverageData, setCoverageData] = useState<WellCoverageSummary | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [mlStatus, setMlStatus] = useState<MLStatus | null>(null);
+  const [mlForecast, setMlForecast] = useState<MLForecastResult | null>(null);
+  const [mlAnomaly, setMlAnomaly] = useState<MLAnomalyResult | null>(null);
+  const [mlHealth, setMlHealth] = useState<MLHealthResult | null>(null);
+  const [mlFailure, setMlFailure] = useState<MLFailureResult | null>(null);
+  const [mlLoading, setMlLoading] = useState(false);
   const tabs: Tab[] = ["OVERVIEW", "TELEMETRY", "PHYSICS", "HISTORY", "ANALYTICS", "ML", "OPTIMIZATION"];
 
   // Load historical data when HISTORY tab is selected
@@ -187,6 +198,37 @@ export default function Inspector({
         });
     }
   }, [tab, wellId]);
+
+  // Load ML data when ML tab is selected
+  useEffect(() => {
+    if (tab === "ML") {
+      setMlLoading(true);
+      Promise.all([
+        api.mlStatus(),
+        wellId ? api.mlForecast({ well_id: wellId, horizon_days: 30 }) : Promise.resolve(null),
+        wellId && telemetry ? api.mlAnomaly({ variable: "spm", value: telemetry.spm, well_id: wellId }) : Promise.resolve(null),
+        wellId ? api.mlHealth({ well_id: wellId, features: { spm: telemetry?.spm, stroke: telemetry?.stroke_in } }) : Promise.resolve(null),
+        wellId ? api.mlFailure({ well_id: wellId }) : Promise.resolve(null),
+      ])
+        .then(([status, forecast, anomaly, health, failure]) => {
+          setMlStatus(status);
+          setMlForecast(forecast);
+          setMlAnomaly(anomaly);
+          setMlHealth(health);
+          setMlFailure(failure);
+        })
+        .catch(() => {
+          setMlStatus(null);
+          setMlForecast(null);
+          setMlAnomaly(null);
+          setMlHealth(null);
+          setMlFailure(null);
+        })
+        .finally(() => {
+          setMlLoading(false);
+        });
+    }
+  }, [tab, wellId, telemetry]);
 
   return (
     <aside className="glass rounded-none border-l border-slate-700/40 w-[380px] shrink-0 flex flex-col min-h-0">
@@ -586,18 +628,199 @@ export default function Inspector({
             )}
 
             {tab === "ANALYTICS" && (
-              <div className="text-xs text-slate-400 space-y-2">
-                <Pill level="MODERATE" />
-                <p className="font-mono">Coming in Phase 3 — Advanced Analytics.</p>
-                <p>Advanced trend analysis and anomaly detection will be available with ML integration.</p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Pill level="MODERATE" />
+                  <span className="text-[11px] font-mono text-slate-300">ANALYTICS (Priority 2)</span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Historical time-series analytics are available in the HISTORY tab, including coverage analysis, trend detection, and safe aggregation.
+                </p>
+                <p className="text-xs text-slate-400">
+                  ML intelligence (forecasting, anomaly detection, health assessment) is available in the ML tab.
+                </p>
               </div>
             )}
 
             {tab === "ML" && (
-              <div className="text-xs text-slate-400 space-y-2">
-                <Pill level="MODERATE" />
-                <p className="font-mono">Coming in Phase 3 — ML Intelligence.</p>
-                <p>ML models will consume only ML-safe historical observations. See HISTORY tab for data readiness.</p>
+              <div className="space-y-3">
+                {mlLoading ? (
+                  <p className="text-xs text-slate-500 font-mono">Loading ML intelligence…</p>
+                ) : mlStatus ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Pill level={mlStatus.status === "OPERATIONAL" ? "LOW" : "MODERATE"} />
+                      <span className="text-[11px] font-mono text-slate-300">
+                        {mlStatus.status} — {mlStatus.datasets} datasets
+                      </span>
+                    </div>
+                    
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">PRODUCTION FORECAST</h4>
+                      {mlForecast ? (
+                        <div className="space-y-2">
+                          {mlForecast.insufficient_data ? (
+                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                              <p className="text-[11px] font-mono text-amber-200">
+                                Insufficient training data
+                              </p>
+                              <p className="text-[10px] font-mono text-slate-500 mt-1">
+                                {mlForecast.insufficient_reason}
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <Rows
+                                rows={[
+                                  ["Model", `${mlForecast.model_id} v${mlForecast.model_version}`],
+                                  ["Data quality", mlForecast.data_quality],
+                                  ["Horizon", `${mlForecast.forecast_horizon_days} days`],
+                                ]}
+                              />
+                              {mlForecast.limitations.length > 0 && (
+                                <div className="text-[10px] font-mono text-slate-500 space-y-1">
+                                  {mlForecast.limitations.map((lim, i) => (
+                                    <p key={i}>• {lim}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 font-mono">No forecast data available</p>
+                      )}
+                    </section>
+
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">ANOMALY DETECTION</h4>
+                      {mlAnomaly ? (
+                        <div className="space-y-2">
+                          {mlAnomaly.insufficient_data ? (
+                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                              <p className="text-[11px] font-mono text-amber-200">
+                                Insufficient historical context
+                              </p>
+                              <p className="text-[10px] font-mono text-slate-500 mt-1">
+                                {mlAnomaly.insufficient_reason}
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <Pill level={mlAnomaly.status === "NORMAL" ? "LOW" : mlAnomaly.status === "WARNING" ? "MODERATE" : "HIGH"} />
+                                <span className="text-[11px] font-mono text-slate-300">
+                                  {mlAnomaly.status}
+                                </span>
+                              </div>
+                              <Rows
+                                rows={[
+                                  ["Variable", mlAnomaly.variable],
+                                  ["Value", fmt(mlAnomaly.observed_value)],
+                                  ["Score", fmt(mlAnomaly.anomaly_score, 2)],
+                                  ["Method", mlAnomaly.method],
+                                ]}
+                              />
+                              <p className="text-[10px] font-mono text-slate-400">{mlAnomaly.explanation}</p>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 font-mono">No anomaly data available</p>
+                      )}
+                    </section>
+
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">SRP/PUMP HEALTH</h4>
+                      {mlHealth ? (
+                        <div className="space-y-2">
+                          {mlHealth.insufficient_data ? (
+                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                              <p className="text-[11px] font-mono text-amber-200">
+                                Insufficient SRP operational data
+                              </p>
+                              <p className="text-[10px] font-mono text-slate-500 mt-1">
+                                {mlHealth.insufficient_reason}
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <Pill level={mlHealth.health_status === "HEALTHY" ? "LOW" : mlHealth.health_status === "DEGRADED" ? "MODERATE" : "HIGH"} />
+                                <span className="text-[11px] font-mono text-slate-300">
+                                  {mlHealth.health_status} ({fmt(mlHealth.health_score, 2)})
+                                </span>
+                              </div>
+                              <Rows
+                                rows={[
+                                  ["Model", `${mlHealth.model_id} v${mlHealth.model_version}`],
+                                  ["Data quality", mlHealth.data_quality],
+                                  ["SPM status", mlHealth.spm_status || "—"],
+                                  ["Stroke status", mlHealth.stroke_status || "—"],
+                                ]}
+                              />
+                              {mlHealth.limitations.length > 0 && (
+                                <div className="text-[10px] font-mono text-slate-500 space-y-1">
+                                  {mlHealth.limitations.map((lim, i) => (
+                                    <p key={i}>• {lim}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 font-mono">No health data available</p>
+                      )}
+                    </section>
+
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">FAILURE RISK</h4>
+                      {mlFailure ? (
+                        <div className="space-y-2">
+                          {mlFailure.insufficient_data ? (
+                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                              <p className="text-[11px] font-mono text-amber-200">
+                                Insufficient labeled failure data
+                              </p>
+                              <p className="text-[10px] font-mono text-slate-500 mt-1">
+                                {mlFailure.insufficient_reason}
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <Rows
+                                rows={[
+                                  ["Model", `${mlFailure.model_id} v${mlFailure.model_version}`],
+                                  ["Data quality", mlFailure.data_quality],
+                                  ["Risk level", mlFailure.risk_level || "—"],
+                                  ["Probability", mlFailure.failure_probability !== null ? fmt(mlFailure.failure_probability * 100, 1) + "%" : "—"],
+                                ]}
+                              />
+                              {mlFailure.limitations.length > 0 && (
+                                <div className="text-[10px] font-mono text-slate-500 space-y-1">
+                                  {mlFailure.limitations.map((lim, i) => (
+                                    <p key={i}>• {lim}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 font-mono">No failure risk data available</p>
+                      )}
+                    </section>
+
+                    <div className="text-[10px] font-mono text-slate-500 space-y-1">
+                      <p>ML intelligence uses only ML-safe historical observations.</p>
+                      <p>See HISTORY tab for data readiness and provenance.</p>
+                      <p>Models unavailable due to insufficient training data return explicit unavailable states.</p>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500 font-mono">ML system unavailable</p>
+                )}
               </div>
             )}
 
