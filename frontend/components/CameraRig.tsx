@@ -13,10 +13,20 @@ function desiredFor(preset: CameraPreset, focusX: number): { pos: THREE.Vector3;
       pos: new THREE.Vector3(focusX + 8.5, 6.5, 11),
       tgt: new THREE.Vector3(focusX, -1.5, 0),
     };
+  if (preset === "WELLBORE")
+    return {
+      pos: new THREE.Vector3(focusX + 10.5, -9.5, 9.5),
+      tgt: new THREE.Vector3(focusX, -11.5, 0),
+    };
   if (preset === "RESERVOIR")
     return {
       pos: new THREE.Vector3(focusX + 9.5, -12.5, 13),
       tgt: new THREE.Vector3(focusX, -20, 0),
+    };
+  if (preset === "PUMP")
+    return {
+      pos: new THREE.Vector3(focusX + 5.2, -18.4, 7.2),
+      tgt: new THREE.Vector3(focusX, -21, 0),
     };
   return {
     pos: new THREE.Vector3(focusX * 0.3 + 24, 15, 30),
@@ -66,9 +76,9 @@ export default function CameraRig({
       makeDefault
       enableDamping
       dampingFactor={0.08}
-      minDistance={4}
+      minDistance={2.5}
       maxDistance={90}
-      maxPolarAngle={Math.PI * 0.62}
+      maxPolarAngle={Math.PI * 0.66}
       onStart={() => {
         anim.current.active = false;
       }}

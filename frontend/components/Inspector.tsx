@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { OBJECT_META, fmt } from "@/lib/scene";
+import { COMPONENTS, isIsolatable } from "@/lib/components";
 import type {
+  IsolatableKind,
   ObjectKind,
   OptimizeResponse,
   SceneSelection,
@@ -69,11 +71,20 @@ const OBJECT_SECTIONS: Record<
       ["Impact loading", `${t.impact_risk.risk_level} (${fmt(t.impact_risk.risk_score, 2)})`],
     ],
   }),
+  casing: () => ({
+    heading: "Structural liner",
+    rows: [
+      ["Casing diameter", "Not available"],
+      ["Role", "Wellbore structure (prototype visualization)"],
+      ["Twin link", "Hosts tubing + rod string"],
+    ],
+  }),
   tubing: (t) => ({
     heading: "Production path",
     rows: [
       ["Reservoir inflow", `${fmt(t.estimated_reservoir_inflow_bopd)} BOPD`],
       ["Mobility factor", fmt(t.mobility_factor, 3)],
+      ["Tubing diameter", "Not available"],
     ],
   }),
   rod: (t) => ({
@@ -89,15 +100,33 @@ const OBJECT_SECTIONS: Record<
       ["Actual capacity", `${fmt(t.pump_capacity_bopd)} BOPD`],
       ["Theoretical", `${fmt(t.pump_theoretical_capacity_bopd)} BOPD`],
       ["Fillage / efficiency", `${t.pump_fillage} / ${t.pump_efficiency} (prototype)`],
+      ["Pump depth", "Not available"],
     ],
   }),
   reservoir: (t) => ({
     heading: "Thermal / pressure state",
     rows: [
       ["Temperature", `${fmt(t.estimated_temperature_c)} °C`],
+      ["Reservoir pressure", `${fmt(t.reservoir_pressure_bar)} bar (backend)`],
       ["Viscosity", `${fmt(t.estimated_viscosity_cp)} cP`],
       ["Mobility", fmt(t.mobility_factor, 3)],
       ["Heating intensity", fmt(t.heating_intensity, 2)],
+    ],
+  }),
+  thermal: (t) => ({
+    heading: "Scalar thermal mapping",
+    rows: [
+      ["Estimated temp", `${fmt(t.estimated_temperature_c)} °C`],
+      ["Baseline temp", `${fmt(t.baseline_reservoir_temperature_c)} °C`],
+      ["Spatial field", "Not available (visual mapping only)"],
+    ],
+  }),
+  formation: () => ({
+    heading: "Structural context",
+    rows: [
+      ["Type", "Cap / base rock layer"],
+      ["Backend metrics", "Not available"],
+      ["Role", "Geological context for the oil zone"],
     ],
   }),
 };
@@ -110,6 +139,9 @@ export default function Inspector({
   opt,
   optLoading,
   onRunOptimize,
+  isolated,
+  onIsolate,
+  onShowAll,
 }: {
   selection: SceneSelection | null;
   wellId: string | null;
@@ -118,6 +150,9 @@ export default function Inspector({
   opt: OptimizeResponse | null;
   optLoading: boolean;
   onRunOptimize: () => void;
+  isolated: IsolatableKind | null;
+  onIsolate: (kind: IsolatableKind) => void;
+  onShowAll: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("OVERVIEW");
   const tabs: Tab[] = ["OVERVIEW", "TELEMETRY", "PHYSICS", "ANALYTICS", "ML", "OPTIMIZATION"];
@@ -142,6 +177,30 @@ export default function Inspector({
               {selection.kind === "well" ? `${wellId} — HEAVY OIL WELL` : selection.label}
             </div>
             <div className="text-[11px] text-slate-400">{OBJECT_META[selection.kind].hint}</div>
+            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+              Depth {COMPONENTS[selection.kind].depthPct[0]}–{COMPONENTS[selection.kind].depthPct[1]}% (prototype-relative)
+            </div>
+            <div className="flex gap-2 mt-2">
+              {isIsolatable(selection.kind) ? (
+                isolated === selection.kind ? (
+                  <button
+                    onClick={onShowAll}
+                    className="text-[10px] font-mono font-bold px-2.5 py-1.5 rounded-lg bg-teal-400/15 text-teal-200 border border-teal-300/40"
+                  >
+                    ◉ SHOW ALL
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onIsolate(selection.kind as IsolatableKind)}
+                    className="text-[10px] font-mono font-bold px-2.5 py-1.5 rounded-lg bg-slate-700/70 text-slate-200 border border-slate-600/60 hover:border-teal-300/50"
+                  >
+                    ◎ ISOLATE {COMPONENTS[selection.kind].displayName.toUpperCase()}
+                  </button>
+                )
+              ) : (
+                <span className="text-[10px] font-mono text-slate-500">Aggregate / surface entity — isolation N/A</span>
+              )}
+            </div>
           </div>
         )}
       </div>

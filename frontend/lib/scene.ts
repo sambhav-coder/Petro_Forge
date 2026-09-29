@@ -40,10 +40,13 @@ export const OBJECT_META: Record<ObjectKind, { title: string; hint: string }> = 
   well: { title: "Well", hint: "Engineered asset — telemetry + twin state" },
   wellhead: { title: "Wellhead", hint: "Surface pressure boundary + production outlet" },
   srp: { title: "SRP Surface Unit", hint: "Beam pumping unit — motion follows SPM" },
+  casing: { title: "Casing", hint: "Structural wellbore liner (prototype visualization)" },
   tubing: { title: "Production Tubing", hint: "Production fluid path to surface" },
   rod: { title: "Rod String", hint: "Reciprocating drive string — see rod-float indicator" },
   pump: { title: "Downhole Pump", hint: "Positive-displacement lift point" },
-  reservoir: { title: "Reservoir", hint: "Jodhpur Sandstone (prototype volume) — thermal state" },
+  reservoir: { title: "Oil-Bearing Zone", hint: "Heavy-oil sandstone volume — thermal state" },
+  thermal: { title: "Thermal Zone", hint: "Visual mapping of the scalar twin temperature" },
+  formation: { title: "Formation Rock", hint: "Cap / base rock — structural context only" },
 };
 
 /** Map scalar twin temperature onto a 0..1 thermal-visual intensity. */

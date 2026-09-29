@@ -5,9 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import { api, apiBase } from "@/lib/api";
 import type {
   CameraPreset,
+  IsolatableKind,
   OptimizeResponse,
   SceneSelection,
   TwinSnapshot,
+  ViewMode,
   WellTelemetry,
   WellsResponse,
 } from "@/lib/types";
@@ -23,6 +25,8 @@ export default function Home() {
   const [selectedWellId, setSelectedWellId] = useState<string | null>(null);
   const [selection, setSelection] = useState<SceneSelection | null>(null);
   const [preset, setPreset] = useState<CameraPreset>("FIELD");
+  const [viewMode, setViewMode] = useState<ViewMode>("CUTAWAY");
+  const [isolated, setIsolated] = useState<IsolatableKind | null>(null);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,6 +93,8 @@ export default function Home() {
   const pickWell = async (id: string) => {
     setSelectedWellId(id);
     setSelection({ kind: "well", wellId: id, label: `Well — ${id}` });
+    setIsolated(null);
+    setPreset("WELL");
     try {
       await loadWell(id);
     } catch (e) {
@@ -123,7 +129,14 @@ export default function Home() {
 
   const twin = selectedWellId ? (twins[selectedWellId] ?? null) : null;
   const telemetry = selectedWellId ? (telemetries[selectedWellId] ?? null) : null;
-  const presets: CameraPreset[] = ["FIELD", "WELL", "RESERVOIR"];
+  const presets: { id: CameraPreset; label: string }[] = [
+    { id: "FIELD", label: "▦ FIELD" },
+    { id: "WELL", label: "◉ WELL" },
+    { id: "WELLBORE", label: "⛏ WELLBORE" },
+    { id: "RESERVOIR", label: "▼ RESERVOIR" },
+    { id: "PUMP", label: "⬣ PUMP" },
+  ];
+  const viewModes: ViewMode[] = ["NORMAL", "CUTAWAY", "XRAY"];
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#070b14]">
@@ -197,6 +210,8 @@ export default function Home() {
               onDeselect={() => setSelection(null)}
               preset={preset}
               focusWellId={selectedWellId}
+              viewMode={viewMode}
+              isolated={isolated}
             />
           ) : (
             !loading && (
@@ -239,6 +254,9 @@ export default function Home() {
             opt={selectedWellId ? (opts[selectedWellId] ?? null) : null}
             optLoading={optLoading}
             onRunOptimize={runOptimize}
+            isolated={isolated}
+            onIsolate={setIsolated}
+            onShowAll={() => setIsolated(null)}
           />
         </div>
       </div>
@@ -247,21 +265,47 @@ export default function Home() {
       <footer className="glass border-t border-slate-700/40 px-4 py-2 flex flex-wrap items-center gap-2 z-10">
         {presets.map((p) => (
           <button
-            key={p}
-            onClick={() => setPreset(p)}
+            key={p.id}
+            onClick={() => setPreset(p.id)}
             className={`text-[11px] font-mono font-bold px-3 py-1.5 rounded-lg border transition-colors ${
-              preset === p
+              preset === p.id
                 ? "bg-teal-400/15 text-teal-200 border-teal-300/40"
                 : "bg-slate-800/60 text-slate-400 border-slate-600/50 hover:text-slate-200"
             }`}
           >
-            {p === "FIELD" ? "▦ FIELD" : p === "WELL" ? "◉ WELL" : "▼ RESERVOIR"}
+            {p.label}
           </button>
         ))}
+        <div className="flex items-center gap-1 ml-2">
+          <span className="text-[10px] font-mono text-slate-500 mr-1">VIEW</span>
+          {viewModes.map((v) => (
+            <button
+              key={v}
+              onClick={() => setViewMode(v)}
+              className={`text-[10px] font-mono font-bold px-2 py-1.5 rounded-lg border transition-colors ${
+                viewMode === v
+                  ? "bg-amber-400/15 text-amber-200 border-amber-300/40"
+                  : "bg-slate-800/60 text-slate-400 border-slate-600/50 hover:text-slate-200"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+        {isolated && (
+          <button
+            onClick={() => setIsolated(null)}
+            className="text-[10px] font-mono font-bold px-2.5 py-1.5 rounded-lg bg-teal-400/15 text-teal-200 border border-teal-300/40"
+          >
+            ◉ SHOW ALL ({isolated})
+          </button>
+        )}
         <div className="flex items-center gap-3 ml-3 text-[10px] font-mono text-slate-500">
+          <span><span style={{ color: "#8a6844" }}>■</span> formation</span>
           <span><span className="text-amber-300">■</span> oil / thermal</span>
           <span><span className="text-teal-300">■</span> selected</span>
           <span><span className="text-slate-400">■</span> steel</span>
+          <span><span style={{ color: "#1f2733" }}>■</span> rod</span>
         </div>
         <div className="flex-1" />
         <div className="text-[10px] font-mono text-slate-500">

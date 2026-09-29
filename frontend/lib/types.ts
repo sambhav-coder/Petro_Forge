@@ -124,15 +124,23 @@ export interface OptimizeResponse {
   prototype_disclaimer: string;
 }
 
-/* Scene selection model: every interactive object maps to a twin entity. */
+/* Scene selection model: every interactive object maps to a twin entity.
+   casing / thermal / formation are Phase 1B splits for deep exploration. */
 export type ObjectKind =
   | "well"
   | "wellhead"
   | "srp"
+  | "casing"
   | "tubing"
   | "rod"
   | "pump"
-  | "reservoir";
+  | "reservoir"
+  | "thermal"
+  | "formation";
+
+export type IsolatableKind = Exclude<ObjectKind, "well" | "srp">;
+
+export type ViewMode = "NORMAL" | "CUTAWAY" | "XRAY";
 
 export interface SceneSelection {
   kind: ObjectKind;
@@ -140,4 +148,4 @@ export interface SceneSelection {
   label: string;
 }
 
-export type CameraPreset = "FIELD" | "WELL" | "RESERVOIR";
+export type CameraPreset = "FIELD" | "WELL" | "WELLBORE" | "RESERVOIR" | "PUMP";

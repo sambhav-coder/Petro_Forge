@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import { COLORS, LAYOUT } from "@/lib/scene";
+import { rulerStops, yOfDepthPct } from "@/lib/depth";
+import type { ViewMode } from "@/lib/types";
 
 /* Deterministic pseudo-noise — no Math.random anywhere. */
 function groundH(x: number, z: number): number {
@@ -50,10 +52,12 @@ function StrataWall({
   position,
   rotationY,
   width,
+  opacity,
 }: {
   position: [number, number, number];
   rotationY: number;
   width: number;
+  opacity: number;
 }) {
   const layers = useMemo(() => {
     const out: { y: number; h: number; c: string }[] = [];
@@ -72,28 +76,36 @@ function StrataWall({
       {layers.map((l, i) => (
         <mesh key={i} position={[0, l.y, 0]} receiveShadow>
           <boxGeometry args={[width, l.h, 0.5]} />
-          <meshStandardMaterial color={l.c} roughness={0.95} metalness={0.03} />
+          <meshStandardMaterial color={l.c} roughness={0.95} metalness={0.03}
+            transparent opacity={opacity} />
         </mesh>
       ))}
     </group>
   );
 }
 
+/* Engineering depth ruler: prototype-relative percentages (0 = surface,
+   100 = shaft floor) plus pump-level marker. No field depths are claimed. */
 function DepthRuler({ x }: { x: number }) {
-  const ticks = [-5, -10, -15, -20, -25];
+  const stops = rulerStops();
   return (
     <group>
       <mesh position={[x, -13, 2.9]}>
-        <boxGeometry args={[0.08, 24, 0.08]} />
+        <boxGeometry args={[0.08, 26, 0.08]} />
         <meshStandardMaterial color={COLORS.selectTeal} emissive={COLORS.selectTeal} emissiveIntensity={0.5} />
       </mesh>
-      {ticks.map((t) => (
-        <group key={t}>
-          <mesh position={[x, t, 2.9]}>
-            <boxGeometry args={[0.7, 0.07, 0.07]} />
-            <meshStandardMaterial color={COLORS.selectTeal} emissive={COLORS.selectTeal} emissiveIntensity={0.6} />
+      {stops.map((s) => {
+        const y = yOfDepthPct(s.pct);
+        return (
+        <group key={s.label}>
+          <mesh position={[x, y, 2.9]}>
+            <boxGeometry args={[s.accent ? 1.1 : 0.7, 0.07, 0.07]} />
+            <meshStandardMaterial
+              color={s.accent ? COLORS.oilAmber : COLORS.selectTeal}
+              emissive={s.accent ? COLORS.oilAmber : COLORS.selectTeal}
+              emissiveIntensity={0.6} />
           </mesh>
-          <Html position={[x + 0.4, t, 2.9]} center>
+          <Html position={[x + 0.4, y, 2.9]} center>
             <div
               style={{
                 fontSize: 10,
@@ -103,11 +115,19 @@ function DepthRuler({ x }: { x: number }) {
                 textShadow: "0 0 6px #000",
               }}
             >
-              {t} rel. units*
+              {s.label}
             </div>
           </Html>
+          {s.accent && (
+            <Html position={[x + 0.4, y - 0.9, 2.9]} center>
+              <div style={{ fontSize: 9, fontFamily: "monospace", color: "#78716c", whiteSpace: "nowrap" }}>
+                *prototype-relative
+              </div>
+            </Html>
+          )}
         </group>
-      ))}
+        );
+      })}
     </group>
   );
 }
@@ -115,9 +135,11 @@ function DepthRuler({ x }: { x: number }) {
 export default function Terrain({
   sites,
   selectedWellIndex,
+  viewMode,
 }: {
   sites: number[];
   selectedWellIndex: number;
+  viewMode: ViewMode;
 }) {
   const hw = LAYOUT.shaftHalfWidth;
   const sorted = useMemo(() => [...sites].sort((a, b) => a - b), [sites]);
@@ -126,7 +148,8 @@ export default function Terrain({
   const midX = (minX + maxX) / 2;
   const fullW = maxX - minX;
 
-  // Shaft strip z∈[-3,3] split into segments between shaft openings.
+  // Formation readability per view mode.
+  const strataOpacity = viewMode === "NORMAL" ? 1 : viewMode === "CUTAWAY" ? 0.32 : 0.09;
   const strips = useMemo(() => {
     const edges = [minX, ...sorted.flatMap((s) => [s - hw, s + hw]), maxX];
     const out: { cx: number; w: number }[] = [];
@@ -149,9 +172,9 @@ export default function Terrain({
       {/* Shaft walls + floor per site */}
       {sites.map((sx, i) => (
         <group key={sx} position={[sx, 0, 0]}>
-          <StrataWall position={[-hw, 0, 0]} rotationY={Math.PI / 2} width={6} />
-          <StrataWall position={[hw, 0, 0]} rotationY={Math.PI / 2} width={6} />
-          <StrataWall position={[0, 0, -3]} rotationY={0} width={hw * 2} />
+          <StrataWall position={[-hw, 0, 0]} rotationY={Math.PI / 2} width={6} opacity={strataOpacity} />
+          <StrataWall position={[hw, 0, 0]} rotationY={Math.PI / 2} width={6} opacity={strataOpacity} />
+          <StrataWall position={[0, 0, -3]} rotationY={0} width={hw * 2} opacity={strataOpacity} />
           <mesh position={[0, LAYOUT.shaftDepth * -1 - 0.4, 0]} receiveShadow>
             <boxGeometry args={[hw * 2, 0.8, 6]} />
             <meshStandardMaterial color="#171208" roughness={1} />

@@ -6,7 +6,8 @@ import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { COLORS, LAYOUT } from "@/lib/scene";
 import { useSelectable } from "@/lib/useSelectable";
-import type { ObjectKind, SceneSelection, TwinSnapshot } from "@/lib/types";
+import { useKindIsolation } from "@/lib/useIsolation";
+import type { IsolatableKind, ObjectKind, SceneSelection, TwinSnapshot, ViewMode } from "@/lib/types";
 import Reservoir from "./Reservoir";
 
 /* Prototype SRP assembly — stylized geometry (relative units).
@@ -33,11 +34,11 @@ function Part({
 }) {
   const { hovered, selected, handlers } = useSelectable(kind, wellId, label, selection, onSelect);
   return (
-    <group {...handlers}>
+    <group {...handlers} userData={{ componentKind: kind }}>
       {children}
       {/* Highlight shell is visual-only: hidden when idle so it never
           intercepts pointer events meant for neighboring objects. */}
-      <mesh position={shellPos} visible={selected || hovered}>
+      <mesh position={shellPos} visible={selected || hovered} userData={{ noDim: true }}>
         <boxGeometry args={shellSize} />
         <meshBasicMaterial
           color={COLORS.selectTeal}
@@ -103,20 +104,30 @@ export default function WellAssembly({
   twin,
   selection,
   onSelect,
+  viewMode,
+  isolated,
 }: {
   x: number;
   wellId: string;
   twin: TwinSnapshot | null;
   selection: SceneSelection | null;
   onSelect: (s: SceneSelection) => void;
+  viewMode: ViewMode;
+  isolated: IsolatableKind | null;
 }) {
   const beam = useRef<THREE.Group>(null);
   const crank = useRef<THREE.Mesh>(null);
   const rodGroup = useRef<THREE.Group>(null);
+  const root = useRef<THREE.Group>(null);
+  useKindIsolation(root, isolated, viewMode);
 
   const spm = twin?.spm ?? 0;
   const producing = (twin?.estimated_oil_production_bopd ?? 0) > 0.01;
   const pumpY = LAYOUT.pumpY;
+
+  // Controlled transparency per view mode (engineering readability).
+  const casingOpacity = viewMode === "NORMAL" ? 0.55 : viewMode === "CUTAWAY" ? 0.32 : 0.15;
+  const tubingOpacity = viewMode === "NORMAL" ? 0.88 : viewMode === "CUTAWAY" ? 0.95 : 0.5;
 
   useFrame(({ clock }) => {
     const running = spm > 0;
@@ -132,7 +143,7 @@ export default function WellAssembly({
   const steelDark = { color: COLORS.steelDark, metalness: 0.8, roughness: 0.5 };
 
   return (
-    <group position={[x, 0, 0]}>
+    <group position={[x, 0, 0]} ref={root}>
       {/* Concrete pad */}
       <mesh position={[2.2, -0.1, 0]} receiveShadow>
         <boxGeometry args={[10, 0.5, 6.4]} />
@@ -271,20 +282,26 @@ export default function WellAssembly({
         </Part>
       </group>
 
-      {/* ============ CASING + TUBING ============ */}
-      <Part kind="tubing" wellId={wellId} label={`Casing + tubing — ${wellId}`}
+      {/* ============ CASING (own entity) ============ */}
+      <Part kind="casing" wellId={wellId} label={`Casing — ${wellId}`}
         selection={selection} onSelect={onSelect}
-        shellPos={[0, -9.5, 0]} shellSize={[1.6, 21, 1.6]}>
+        shellPos={[0, -8.2, 0]} shellSize={[1.7, 18.5, 1.7]}>
         <mesh position={[0, -8.2, 0]}>
           <cylinderGeometry args={[0.55, 0.55, 17.6, 20, 1, true]} />
           <meshStandardMaterial color={COLORS.casing} metalness={0.7} roughness={0.45}
-            transparent opacity={0.55} side={THREE.DoubleSide} depthWrite={false} />
+            transparent opacity={casingOpacity} side={THREE.DoubleSide} depthWrite={false} />
         </mesh>
+      </Part>
+
+      {/* ============ TUBING (own entity) ============ */}
+      <Part kind="tubing" wellId={wellId} label={`Production tubing — ${wellId}`}
+        selection={selection} onSelect={onSelect}
+        shellPos={[0, -9.6, 0]} shellSize={[1.1, 21.5, 1.1]}>
         <mesh position={[0, -9.6, 0]}>
           <cylinderGeometry args={[0.32, 0.32, 20.8, 16]} />
           {/* Slight transparency so the inner rod string reads in cutaway. */}
           <meshStandardMaterial color="#c8d2e0" metalness={0.95} roughness={0.22}
-            transparent opacity={0.88} />
+            transparent opacity={tubingOpacity} />
         </mesh>
       </Part>
 
@@ -313,7 +330,7 @@ export default function WellAssembly({
       </Part>
 
       {/* Reservoir volume for this well */}
-      <Reservoir wellId={wellId} twin={twin} selection={selection} onSelect={onSelect} />
+      <Reservoir wellId={wellId} twin={twin} selection={selection} onSelect={onSelect} viewMode={viewMode} />
     </group>
   );
 }
