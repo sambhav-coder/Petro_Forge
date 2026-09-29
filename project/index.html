@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baghewala Field Digital Twin — CSS + SRP Optimization (SIH26120, Oil India Limited)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            primary: '#f59e0b',
+                            accent: '#fbbf24',
+                            card: '#111827',
+                            dark: '#080c17'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background: radial-gradient(circle at 10% 20%, #0a0f1d 0%, #060913 90%);
+            color: #f1f5f9;
+        }
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .flow-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #f59e0b;
+            font-weight: 800;
+        }
+        @media (max-width: 1023px) {
+            .flow-arrow { transform: rotate(90deg); padding: 0.25rem 0; }
+        }
+        .phase-chip { transition: all 0.2s ease; }
+        .phase-active {
+            background: rgba(245, 158, 11, 0.18) !important;
+            border-color: rgba(245, 158, 11, 0.6) !important;
+            color: #fde68a !important;
+        }
+        .status-NOMINAL { color: #34d399; }
+        .status-ELEVATED { color: #fbbf24; }
+        .status-HIGH_RISK { color: #fb7185; }
+        input[type="number"], select {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.75rem;
+            width: 100%;
+            color: #e2e8f0;
+        }
+        input[type="number"]:focus, select:focus { outline: 1px solid #f59e0b; }
+        .btn-primary {
+            background: linear-gradient(to right, #f59e0b, #fbbf24);
+            color: #111827;
+            font-weight: 700;
+        }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans antialiased">
+
+    <!-- ================= TOP HEADER ================= -->
+    <header class="sticky top-0 z-50 glass-panel border-b border-slate-800 px-6 py-3 flex flex-wrap items-center gap-3 justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-brand-primary to-brand-accent flex items-center justify-center shadow-lg">
+                <i data-lucide="fuel" class="w-5 h-5 text-slate-900"></i>
+            </div>
+            <div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-brand-primary/20 text-brand-accent border border-brand-primary/30">SIH26120</span>
+                    <span class="text-xs font-medium px-2 py-0.5 rounded bg-slate-800 text-slate-300">Oil India Limited</span>
+                    <span class="text-xs font-medium px-2 py-0.5 rounded bg-slate-800 text-slate-300">Heavy Oil / CSS / SRP Digital Twin</span>
+                </div>
+                <h1 class="text-sm font-bold text-slate-100">BAGHEWALA FIELD — Digital Twin: CSS + SRP Optimization</h1>
+                <p class="text-[11px] text-slate-400">Well-to-Surface Optimization of Cyclic Steam Stimulation and Sucker Rod Pump Operations for Heavy Oil Wells</p>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-800 text-xs font-mono">
+                <span id="conn-dot" class="h-2 w-2 rounded-full bg-slate-500"></span>
+                <span id="conn-text" class="text-slate-400">BACKEND: CHECKING…</span>
+            </div>
+            <select id="well-select" class="w-44" title="Select well" onchange="onWellChange()">
+                <option value="">— no wells —</option>
+            </select>
+            <button onclick="refreshAll()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 flex items-center gap-1.5">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Refresh</span>
+            </button>
+            <button onclick="loadDemoWell()" class="px-3 py-1.5 rounded-lg btn-primary text-xs flex items-center gap-1.5">
+                <i data-lucide="database-zap" class="w-3.5 h-3.5"></i><span>Load BGW-DEMO baseline</span>
+            </button>
+        </div>
+    </header>
+    <div class="px-6 pt-3 max-w-[1600px] w-full mx-auto">
+        <div class="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-400">
+            <span>API:</span>
+            <input id="api-base" type="text" class="w-64 font-mono" value="http://127.0.0.1:8000" title="Backend base URL">
+            <button onclick="saveApiBase()" class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-200">Apply</button>
+            <span id="last-telemetry" class="ml-2"></span>
+        </div>
+        <div id="banner" class="hidden mt-2 px-4 py-2 rounded-lg text-xs font-medium border"></div>
+    </div>
+
+    <main class="flex-1 p-6 space-y-6 max-w-[1600px] w-full mx-auto">
+
+        <!-- Empty state -->
+        <section id="empty-state" class="hidden glass-panel rounded-2xl p-8 text-center space-y-3">
+            <h2 class="text-lg font-bold">No well telemetry available.</h2>
+            <p class="text-sm text-slate-400">Ingest a well baseline via the API, or load the BGW-DEMO baseline with the header button.</p>
+        </section>
+
+        <div id="dashboard" class="space-y-6 hidden">
+        <!-- ================= KPI CARDS ================= -->
+        <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+            <div class="glass-panel rounded-xl p-4 space-y-1">
+                <div class="text-slate-400 text-xs font-medium">Oil Production</div>
+                <div class="text-2xl font-extrabold" id="kpi-production">—</div>
+                <div class="text-[11px] text-slate-500 font-mono">BOPD · engineering estimate</div>
+            </div>
+            <div class="glass-panel rounded-xl p-4 space-y-1">
+                <div class="text-slate-400 text-xs font-medium">Reservoir Temperature</div>
+                <div class="text-2xl font-extrabold" id="kpi-temp">—</div>
+                <div class="text-[11px] text-slate-500 font-mono">°C · steam-elevated estimate</div>
+            </div>
+            <div class="glass-panel rounded-xl p-4 space-y-1">
+                <div class="text-slate-400 text-xs font-medium">Oil Viscosity</div>
+                <div class="text-2xl font-extrabold" id="kpi-visc">—</div>
+                <div class="text-[11px] text-slate-500 font-mono">cP · prototype correlation</div>
+            </div>
+            <div class="glass-panel rounded-xl p-4 space-y-1">
+                <div class="text-slate-400 text-xs font-medium">SOR (prototype)</div>
+                <div class="text-2xl font-extrabold" id="kpi-sor">—</div>
+                <div class="text-[11px] text-slate-500 font-mono">t/bbl · 30-day window</div>
+            </div>
+            <div class="glass-panel rounded-xl p-4 space-y-1">
+                <div class="text-slate-400 text-xs font-medium">Energy (operating day)</div>
+                <div class="text-2xl font-extrabold" id="kpi-energy">—</div>
+                <div class="text-[11px] text-slate-500 font-mono">kWh · steam + pumping</div>
+            </div>
+            <div class="glass-panel rounded-xl p-4 space-y-1">
+                <div class="text-slate-400 text-xs font-medium">Mechanical Risk</div>
+                <div class="text-2xl font-extrabold" id="kpi-risk">—</div>
+                <div class="text-[11px] text-slate-500 font-mono">deterministic indicator</div>
+            </div>
+        </section>
+
+        <!-- ================= WELL-TO-SURFACE FLOW ================= -->
+        <section class="glass-panel rounded-2xl p-6 space-y-3">
+            <h3 class="text-base font-bold flex items-center gap-2"><i data-lucide="workflow" class="w-4 h-4 text-brand-accent"></i>Well-to-Surface Digital Twin Flow</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-7 gap-2 items-stretch text-xs font-mono">
+                <div class="lg:col-span-1 glass-panel rounded-xl p-4 space-y-1 border border-slate-800">
+                    <div class="font-bold text-slate-100 font-sans text-sm">RESERVOIR</div>
+                    <div>Temp: <span id="flow-temp">—</span> °C</div>
+                    <div>Pressure: <span id="flow-resp">—</span> bar</div>
+                    <div>API: <span id="flow-api">—</span>°</div>
+                    <div>Viscosity: <span id="flow-visc">—</span> cP</div>
+                    <div>Mobility: <span id="flow-mob">—</span></div>
+                </div>
+                <div class="flow-arrow text-xl">→</div>
+                <div class="lg:col-span-1 glass-panel rounded-xl p-4 space-y-1 border border-slate-800">
+                    <div class="font-bold text-slate-100 font-sans text-sm">WELLBORE</div>
+                    <div>WHP: <span id="flow-whp">—</span> bar</div>
+                    <div>Inflow: <span id="flow-inflow">—</span> BOPD</div>
+                    <div>Limiting: <span id="flow-limit">—</span></div>
+                </div>
+                <div class="flow-arrow text-xl">→</div>
+                <div class="lg:col-span-1 glass-panel rounded-xl p-4 space-y-1 border border-slate-800">
+                    <div class="font-bold text-slate-100 font-sans text-sm">SRP</div>
+                    <div>SPM: <span id="flow-spm">—</span></div>
+                    <div>Stroke: <span id="flow-stroke">—</span> in</div>
+                    <div>Pump (theor.): <span id="flow-pumpth">—</span></div>
+                    <div>Pump (actual): <span id="flow-pump">—</span> BOPD</div>
+                </div>
+                <div class="flow-arrow text-xl">→</div>
+                <div class="lg:col-span-1 glass-panel rounded-xl p-4 space-y-1 border border-slate-800">
+                    <div class="font-bold text-slate-100 font-sans text-sm">SURFACE</div>
+                    <div>Production: <span id="flow-prod">—</span> BOPD</div>
+                    <div>SOR: <span id="flow-sor">—</span> t/bbl</div>
+                    <div>Energy: <span id="flow-energy">—</span> kWh</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= CSS CYCLE + OPERATING STATE ================= -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="glass-panel rounded-2xl p-6 space-y-3">
+                <h3 class="text-base font-bold flex items-center gap-2"><i data-lucide="flame" class="w-4 h-4 text-brand-accent"></i>CSS Cycle State</h3>
+                <div class="grid grid-cols-4 gap-2 text-center text-xs font-bold">
+                    <div id="phase-INJECTION" class="phase-chip glass-panel rounded-lg p-2 border border-slate-800">INJECTION</div>
+                    <div id="phase-SOAK" class="phase-chip glass-panel rounded-lg p-2 border border-slate-800">SOAK</div>
+                    <div id="phase-PRODUCTION" class="phase-chip glass-panel rounded-lg p-2 border border-slate-800">PRODUCTION</div>
+                    <div id="phase-IDLE" class="phase-chip glass-panel rounded-lg p-2 border border-slate-800">IDLE</div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-xs font-mono pt-1">
+                    <div>Steam volume: <span id="css-steam">—</span> t</div>
+                    <div>Injection pressure: <span id="css-press">—</span> bar</div>
+                    <div>Soak time: <span id="css-soak">—</span> h</div>
+                    <div>Heating intensity: <span id="css-intensity">—</span></div>
+                </div>
+                <p class="text-[11px] text-slate-500">Current-phase visualization only — no state-transition system is implemented.</p>
+            </div>
+            <div class="glass-panel rounded-2xl p-6 space-y-3">
+                <h3 class="text-base font-bold flex items-center gap-2"><i data-lucide="settings-2" class="w-4 h-4 text-brand-accent"></i>Current Operating State</h3>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs font-mono">
+                    <div>Steam: <span id="op-steam">—</span> t</div>
+                    <div>Steam press.: <span id="op-press">—</span> bar</div>
+                    <div>Soak: <span id="op-soak">—</span> h</div>
+                    <div>SPM: <span id="op-spm">—</span></div>
+                    <div>Stroke: <span id="op-stroke">—</span> in</div>
+                    <div>VFD: <span id="op-vfd">—</span> %</div>
+                    <div>Res. pressure: <span id="op-resp">—</span> bar</div>
+                    <div>WHP: <span id="op-whp">—</span> bar</div>
+                    <div>Oil rate (measured): <span id="op-rate">—</span> BOPD</div>
+                    <div>Water cut: <span id="op-wc">—</span> %</div>
+                    <div>API gravity: <span id="op-api">—</span>°</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= WHAT-IF ================= -->
+        <section class="glass-panel rounded-2xl p-6 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-base font-bold flex items-center gap-2"><i data-lucide="flask-conical" class="w-4 h-4 text-brand-accent"></i>What-If Scenario Simulation</h3>
+                <button id="btn-sim" onclick="runSimulation()" class="px-4 py-2 rounded-lg btn-primary text-xs">RUN SIMULATION</button>
+            </div>
+            <p class="text-[11px] text-slate-500">Simulation only — does not change field operating state. VFD is not a scenario input: backend physics does not consume it.</p>
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
+                <label>Steam (t)<input id="sim-steam" type="number" min="0" max="100000" step="10"></label>
+                <label>Inj. press. (bar)<input id="sim-press" type="number" min="0" max="300" step="1"></label>
+                <label>Soak (h)<input id="sim-soak" type="number" min="0" max="720" step="1"></label>
+                <label>SPM<input id="sim-spm" type="number" min="0" max="20" step="0.5"></label>
+                <label>Stroke (in)<input id="sim-stroke" type="number" min="0" max="300" step="1"></label>
+                <label>Phase<select id="sim-phase"><option>INJECTION</option><option>SOAK</option><option selected>PRODUCTION</option><option>IDLE</option></select></label>
+            </div>
+            <div id="sim-status" class="text-xs font-mono text-slate-400"></div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs font-mono">
+                    <thead class="text-slate-400 bg-slate-900/80 border-b border-slate-800">
+                        <tr><th class="py-2 px-3">METRIC</th><th class="py-2 px-3">CURRENT</th><th class="py-2 px-3">SCENARIO</th><th class="py-2 px-3">DELTA</th></tr>
+                    </thead>
+                    <tbody id="sim-body" class="divide-y divide-slate-800 text-slate-300"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ================= OPTIMIZATION ================= -->
+        <section class="glass-panel rounded-2xl p-6 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-base font-bold flex items-center gap-2"><i data-lucide="target" class="w-4 h-4 text-brand-accent"></i>Engineering Optimization (joint CSS × SRP)</h3>
+                <button id="btn-opt" onclick="runOptimization()" class="px-4 py-2 rounded-lg btn-primary text-xs">RUN OPTIMIZATION</button>
+            </div>
+            <div id="opt-status" class="text-xs font-mono text-slate-400"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="glass-panel rounded-xl p-4 border border-slate-800 space-y-1 text-xs font-mono">
+                    <div class="font-bold font-sans text-sm text-slate-100">Current operating state</div>
+                    <div id="opt-current">—</div>
+                </div>
+                <div class="glass-panel rounded-xl p-4 border border-amber-500/40 space-y-1 text-xs font-mono">
+                    <div class="font-bold font-sans text-sm text-amber-200">Recommended Simulation Scenario <span class="text-[10px] text-slate-400">(prototype — not a field command)</span></div>
+                    <div id="opt-rec">—</div>
+                </div>
+            </div>
+            <div>
+                <h4 class="text-sm font-bold mb-2">Top 5 scenarios <span class="text-[11px] font-mono text-slate-500" id="opt-eval"></span></h4>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs font-mono">
+                        <thead class="text-slate-400 bg-slate-900/80 border-b border-slate-800">
+                            <tr><th class="py-2 px-3">RANK</th><th class="py-2 px-3">STEAM t</th><th class="py-2 px-3">SOAK h</th><th class="py-2 px-3">SPM</th><th class="py-2 px-3">STROKE in</th><th class="py-2 px-3">PROD BOPD</th><th class="py-2 px-3">SOR</th><th class="py-2 px-3">ENERGY kWh</th><th class="py-2 px-3">RISK</th><th class="py-2 px-3">SCORE</th></tr>
+                        </thead>
+                        <tbody id="opt-top5" class="divide-y divide-slate-800 text-slate-300"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div>
+                <h4 class="text-sm font-bold mb-2">Why this recommendation? <span class="text-[11px] font-mono text-slate-500">Digital Twin reasoning (not a trained AI model)</span></h4>
+                <ul id="opt-why" class="space-y-1.5 text-xs text-slate-300 list-disc pl-5"></ul>
+            </div>
+        </section>
+
+        <!-- ================= CHARTS + RISKS ================= -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="glass-panel rounded-2xl p-6 space-y-3">
+                <h3 class="text-base font-bold">Current vs Recommended (backend values)</h3>
+                <div class="h-56"><canvas id="chart-prod"></canvas></div>
+                <div class="h-56"><canvas id="chart-energy"></canvas></div>
+            </div>
+            <div class="glass-panel rounded-2xl p-6 space-y-3">
+                <h3 class="text-base font-bold">Thermal state + risk indicators</h3>
+                <div class="h-56"><canvas id="chart-thermal"></canvas></div>
+                <div class="h-56"><canvas id="chart-risk"></canvas></div>
+            </div>
+        </section>
+
+        <section class="glass-panel rounded-2xl p-6 space-y-3">
+            <h3 class="text-base font-bold flex items-center gap-2"><i data-lucide="alert-triangle" class="w-4 h-4 text-brand-accent"></i>Engineering Risk Indicators <span class="text-[11px] font-mono text-slate-500">deterministic prototype proxies — not probabilities, not ML</span></h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs" id="risk-cards"></div>
+        </section>
+
+        <section class="glass-panel rounded-2xl p-6 space-y-3">
+            <h3 class="text-base font-bold">Digital Twin reasoning (backend explanations)</h3>
+            <ul id="insight-list" class="space-y-1.5 text-xs text-slate-300 list-disc pl-5"></ul>
+        </section>
+
+        <!-- ================= AUDIT + STATUS ================= -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 glass-panel rounded-2xl p-6 space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-base font-bold flex items-center gap-2"><i data-lucide="history" class="w-4 h-4 text-emerald-400"></i>Event Timeline (backend audit)</h3>
+                    <span class="text-xs font-mono text-slate-400">TOTAL: <span id="audit-count">0</span></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs font-mono">
+                        <thead class="text-slate-400 bg-slate-900/80 border-b border-slate-800">
+                            <tr><th class="py-2 px-3">TIMESTAMP</th><th class="py-2 px-3">EVENT</th><th class="py-2 px-3">WELL</th><th class="py-2 px-3">PHASE</th><th class="py-2 px-3">OIL BOPD</th><th class="py-2 px-3">HASH</th></tr>
+                        </thead>
+                        <tbody id="audit-body" class="divide-y divide-slate-800 text-slate-300"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="glass-panel rounded-2xl p-6 space-y-2 text-xs font-mono">
+                <h3 class="text-base font-bold font-sans">System Status</h3>
+                <div>Backend: <span id="sys-backend">—</span></div>
+                <div>Digital Twin: <span id="sys-twin">—</span></div>
+                <div>Optimization engine: <span id="sys-opt">—</span></div>
+                <div>Data source: <span class="text-slate-300">LOCAL PROTOTYPE TELEMETRY</span></div>
+                <div>Wells tracked: <span id="sys-wells">—</span></div>
+                <p class="text-[11px] text-slate-500 font-sans pt-2">Prototype Digital Twin. Engineering simulation and scenario recommendations only — not field-validated, not a production guarantee, not automatic control, not live Oil India field data.</p>
+            </div>
+        </section>
+        </div>
+    </main>
+
+    <footer class="glass-panel border-t border-slate-800 px-6 py-4 mt-auto flex flex-wrap items-center justify-between text-xs text-slate-400">
+        <div>Smart India Hackathon 2026 • Problem Statement <strong class="text-slate-200">SIH26120</strong> • Oil India Limited • Prototype Digital Twin</div>
+        <a id="docs-link" href="http://127.0.0.1:8000/docs" target="_blank" class="text-brand-accent hover:underline">FastAPI Swagger UI</a>
+    </footer>
+
+    <script>
+        const state = { wellId: null, well: null, twin: null, opt: null, charts: {} };
+        function apiBase() {
+            return (window.SIH_API_BASE || localStorage.getItem('sih_api_base') || 'http://127.0.0.1:8000').replace(/\/$/, '');
+        }
+        function saveApiBase() {
+            localStorage.setItem('sih_api_base', document.getElementById('api-base').value.trim());
+            document.getElementById('docs-link').href = apiBase() + '/docs';
+            refreshAll();
+        }
+        async function api(path, opts) {
+            const res = await fetch(apiBase() + path, opts);
+            if (!res.ok) {
+                let detail = res.statusText;
+                try { detail = (await res.json()).detail || detail; } catch (e) {}
+                throw new Error(res.status + ' ' + detail);
+            }
+            return res.json();
+        }
+        function banner(msg, ok) {
+            const el = document.getElementById('banner');
+            el.classList.remove('hidden');
+            el.textContent = msg;
+            el.style.borderColor = ok ? '#34d399' : '#fb7185';
+            el.style.color = ok ? '#a7f3d0' : '#fecdd3';
+            el.style.background = ok ? 'rgba(52,211,153,0.08)' : 'rgba(251,113,133,0.08)';
+        }
+        function fmt(v, digits) {
+            if (v === null || v === undefined || Number.isNaN(v)) return '—';
+            return Number(v).toFixed(digits === undefined ? 1 : digits);
+        }
+        function fmtDelta(v, digits, invert) {
+            if (v === null || v === undefined) return '—';
+            const d = digits === undefined ? 1 : digits;
+            const good = invert ? v < 0 : v > 0;
+            const cls = v === 0 ? 'text-slate-400' : (good ? 'text-emerald-400' : 'text-rose-400');
+            return '<span class="' + cls + '">' + (v > 0 ? '+' : '') + Number(v).toFixed(d) + '</span>';
+        }
+        function setConn(ok, label) {
+            document.getElementById('conn-dot').className = 'h-2 w-2 rounded-full ' + (ok ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500');
+            const t = document.getElementById('conn-text');
+            t.textContent = label;
+            t.className = ok ? 'text-emerald-400' : 'text-rose-400';
+            document.getElementById('sys-backend').textContent = ok ? 'CONNECTED' : 'UNREACHABLE';
+            document.getElementById('sys-backend').className = ok ? 'text-emerald-400' : 'text-rose-400';
+        }
+        function icons() { if (window.lucide) lucide.createIcons(); }
+
+        async function refreshAll() {
+            try {
+                const health = await api('/');
+                setConn(true, 'BACKEND: CONNECTED');
+                const wells = await api('/api/v1/wells');
+                renderWellList(wells.wells || []);
+                document.getElementById('sys-wells').textContent = wells.total_wells || 0;
+                if (!state.wellId && wells.wells && wells.wells.length) state.wellId = wells.wells[0].well_id;
+                if (state.wellId) { await loadWell(state.wellId); }
+                else { showEmpty(true); }
+                await loadAudit();
+            } catch (e) {
+                setConn(false, 'BACKEND: UNREACHABLE');
+                banner('Unable to load well data: ' + e.message + ' — check the API base URL and that FastAPI is running.', false);
+            }
+            icons();
+        }
+        function showEmpty(on) {
+            document.getElementById('empty-state').classList.toggle('hidden', !on);
+            document.getElementById('dashboard').classList.toggle('hidden', on);
+        }
+        function renderWellList(wells) {
+            const sel = document.getElementById('well-select');
+            const cur = state.wellId;
+            sel.innerHTML = wells.length
+                ? wells.map(w => '<option value="' + w.well_id + '">' + w.well_id + ' (' + w.css_phase + ', ' + w.oil_rate_bopd + ' BOPD)</option>').join('')
+                : '<option value="">— no wells —</option>';
+            if (cur && wells.some(w => w.well_id === cur)) sel.value = cur;
+            else if (wells.length) { sel.value = wells[0].well_id; state.wellId = wells[0].well_id; }
+        }
+        async function onWellChange() {
+            state.wellId = document.getElementById('well-select').value || null;
+            state.opt = null;
+            if (state.wellId) await loadWell(state.wellId);
+            icons();
+        }
+        async function loadWell(id) {
+            showEmpty(false);
+            state.well = await api('/api/v1/wells/' + encodeURIComponent(id));
+            state.twin = await api('/api/v1/wells/' + encodeURIComponent(id) + '/twin');
+            document.getElementById('last-telemetry').textContent = 'Well ' + id + ' • last telemetry ' + (state.well.timestamp || '—');
+            renderAll();
+        }
+        async function loadDemoWell() {
+            const payload = {
+                well_id: 'BGW-DEMO', reservoir_temperature_c: 47.0, reservoir_pressure_bar: 28.5,
+                api_gravity: 18.0, wellhead_pressure_bar: 12.0, oil_rate_bopd: 22.5,
+                steam_volume_t: 850.0, steam_injection_pressure_bar: 65.0, soak_time_h: 48.0,
+                css_phase: 'PRODUCTION', spm: 5.0, stroke_in: 96.0, vfd_percent: 55.0, water_cut_percent: 35.0
+            };
+            try {
+                await api('/api/v1/telemetry/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                state.wellId = 'BGW-DEMO';
+                banner('BGW-DEMO baseline ingested via POST /api/v1/telemetry/ingest.', true);
+                await refreshAll();
+            } catch (e) { banner('Demo ingest failed: ' + e.message, false); }
+        }
+
+        function riskPill(level) {
+            const cls = level === 'NOMINAL' || level === 'LOW'
+                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                : (level === 'ELEVATED' || level === 'MODERATE'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                    : 'bg-rose-500/20 text-rose-400 border-rose-500/30');
+            return '<span class="px-2 py-0.5 rounded text-[10px] font-bold border ' + cls + '">' + level + '</span>';
+        }
+
+        function renderAll() {
+            const w = state.well, t = state.twin;
+            if (!w || !t) return;
+            document.getElementById('kpi-production').textContent = fmt(t.estimated_oil_production_bopd) + ' BOPD';
+            document.getElementById('kpi-temp').textContent = fmt(t.estimated_temperature_c) + ' °C';
+            document.getElementById('kpi-visc').textContent = fmt(t.estimated_viscosity_cp) + ' cP';
+            document.getElementById('kpi-sor').textContent = fmt(t.steam_oil_ratio_t_per_bbl, 4);
+            document.getElementById('kpi-energy').textContent = fmt(t.total_energy_kwh, 0) + ' kWh';
+            const kr = document.getElementById('kpi-risk');
+            kr.innerHTML = riskPill(t.overall_engineering_status);
+            // flow
+            const set = (id, v, d) => document.getElementById(id).textContent = fmt(v, d);
+            set('flow-temp', t.estimated_temperature_c); set('flow-resp', t.reservoir_pressure_bar);
+            set('flow-api', w.api_gravity); set('flow-visc', t.estimated_viscosity_cp);
+            set('flow-mob', t.mobility_factor, 3); set('flow-whp', t.wellhead_pressure_bar);
+            set('flow-inflow', t.estimated_reservoir_inflow_bopd);
+            document.getElementById('flow-limit').textContent = t.production_limiting_factor;
+            set('flow-spm', t.spm); set('flow-stroke', t.stroke_in, 0);
+            set('flow-pumpth', t.pump_theoretical_capacity_bopd); set('flow-pump', t.pump_capacity_bopd);
+            set('flow-prod', t.estimated_oil_production_bopd); set('flow-sor', t.steam_oil_ratio_t_per_bbl, 4);
+            set('flow-energy', t.total_energy_kwh, 0);
+            // css + operating
+            ['INJECTION', 'SOAK', 'PRODUCTION', 'IDLE'].forEach(p =>
+                document.getElementById('phase-' + p).classList.toggle('phase-active', p === t.css_phase));
+            set('css-steam', t.steam_volume_t, 0); set('css-press', w.steam_injection_pressure_bar);
+            set('css-soak', w.soak_time_h, 0); set('css-intensity', t.heating_intensity, 2);
+            set('op-steam', t.steam_volume_t, 0); set('op-press', w.steam_injection_pressure_bar);
+            set('op-soak', w.soak_time_h, 0); set('op-spm', t.spm); set('op-stroke', t.stroke_in, 0);
+            set('op-vfd', w.vfd_percent); set('op-resp', t.reservoir_pressure_bar);
+            set('op-whp', t.wellhead_pressure_bar); set('op-rate', w.oil_rate_bopd);
+            set('op-wc', w.water_cut_percent); set('op-api', w.api_gravity);
+            // sim form defaults from current state
+            document.getElementById('sim-steam').value = t.steam_volume_t;
+            document.getElementById('sim-press').value = w.steam_injection_pressure_bar;
+            document.getElementById('sim-soak').value = w.soak_time_h;
+            document.getElementById('sim-spm').value = t.spm;
+            document.getElementById('sim-stroke').value = t.stroke_in;
+            document.getElementById('sim-phase').value = t.css_phase;
+            // risks + insights
+            const cards = [['Rod Floating', t.rod_float_risk], ['Impact Loading', t.impact_risk], ['Pump Unsetting', t.pump_unsetting_risk]];
+            document.getElementById('risk-cards').innerHTML = cards.map(c =>
+                '<div class="glass-panel rounded-xl p-4 border border-slate-800 space-y-1"><div class="font-bold font-sans text-sm">' + c[0] + ' ' + riskPill(c[1].risk_level) + '</div>' +
+                '<div class="font-mono">score: ' + fmt(c[1].risk_score, 2) + '</div><p class="text-slate-400">' + c[1].reason + '</p></div>').join('');
+            document.getElementById('insight-list').innerHTML =
+                Object.entries(t.explanations || {}).map(e => '<li><strong class="text-slate-100">' + e[0] + ':</strong> ' + e[1] + '</li>').join('');
+            document.getElementById('sys-twin').textContent = 'READY';
+            document.getElementById('sys-twin').className = 'text-emerald-400';
+            renderCharts();
+            if (state.opt) renderOpt();
+            icons();
+        }
+
+        function drawChart(id, cfg) {
+            if (state.charts[id]) state.charts[id].destroy();
+            state.charts[id] = new Chart(document.getElementById(id), cfg);
+        }
+        const scaleStyle = { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } } };
+        function barOpts(title) {
+            return { responsive: true, maintainAspectRatio: false,
+                plugins: { title: { display: true, text: title, color: '#e2e8f0', font: { size: 11 } },
+                legend: { labels: { color: '#94a3b8', font: { size: 10 } } } },
+                scales: { x: scaleStyle, y: scaleStyle } };
+        }
+        function renderCharts() {
+            const t = state.twin, o = state.opt;
+            const rec = o ? o.recommended : null;
+            drawChart('chart-prod', { type: 'bar',
+                data: { labels: ['Production (BOPD)'],
+                    datasets: [{ label: 'Current', data: [t.estimated_oil_production_bopd], backgroundColor: '#64748b' },
+                        ...(rec ? [{ label: 'Recommended', data: [rec.estimated_oil_production_bopd], backgroundColor: '#f59e0b' }] : [])] },
+                options: barOpts('Oil production — current' + (rec ? ' vs recommended' : '')) });
+            drawChart('chart-energy', { type: 'bar',
+                data: { labels: ['Steam kWh', 'Pumping kWh'],
+                    datasets: [{ label: 'Current', data: [t.steam_energy_kwh, t.pumping_energy_kwh], backgroundColor: ['#64748b', '#475569'] },
+                        ...(rec ? [{ label: 'Recommended', data: [rec.steam_energy_kwh, rec.pumping_energy_kwh], backgroundColor: ['#f59e0b', '#fbbf24'] }] : [])] },
+                options: barOpts('Operating-day energy split (kWh)') });
+            drawChart('chart-thermal', { type: 'bar',
+                data: { labels: ['Baseline °C', 'Estimated °C'],
+                    datasets: [{ label: 'Temperature', data: [t.baseline_reservoir_temperature_c, t.estimated_temperature_c], backgroundColor: ['#475569', '#f59e0b'] }] },
+                options: barOpts('Thermal state (°C) + viscosity ' + fmt(t.estimated_viscosity_cp) + ' cP') });
+            drawChart('chart-risk', { type: 'bar',
+                data: { labels: ['Rod float', 'Impact', 'Unsetting'],
+                    datasets: [{ label: 'Risk score (0–1)', data: [t.rod_float_risk.risk_score, t.impact_risk.risk_score, t.pump_unsetting_risk.risk_score], backgroundColor: '#b45309' }] },
+                options: barOpts('Deterministic risk indicators (prototype proxies)') });
+        }
+
+        async function runSimulation() {
+            if (!state.wellId) return banner('Select a well first.', false);
+            const btn = document.getElementById('btn-sim');
+            btn.disabled = true;
+            document.getElementById('sim-status').textContent = 'Running digital twin simulation...';
+            const body = {
+                steam_volume_t: parseFloat(document.getElementById('sim-steam').value),
+                steam_injection_pressure_bar: parseFloat(document.getElementById('sim-press').value),
+                soak_time_h: parseFloat(document.getElementById('sim-soak').value),
+                spm: parseFloat(document.getElementById('sim-spm').value),
+                stroke_in: parseFloat(document.getElementById('sim-stroke').value),
+                css_phase: document.getElementById('sim-phase').value
+            };
+            try {
+                const r = await api('/api/v1/wells/' + encodeURIComponent(state.wellId) + '/simulate',
+                    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const rows = [
+                    ['Temperature (°C)', r.current.estimated_temperature_c, r.scenario.estimated_temperature_c, r.scenario.estimated_temperature_c - r.current.estimated_temperature_c, 1, false],
+                    ['Viscosity (cP)', r.current.estimated_viscosity_cp, r.scenario.estimated_viscosity_cp, r.scenario.estimated_viscosity_cp - r.current.estimated_viscosity_cp, 1, true],
+                    ['Mobility', r.current.mobility_factor, r.scenario.mobility_factor, r.scenario.mobility_factor - r.current.mobility_factor, 3, false],
+                    ['Reservoir inflow (BOPD)', r.current.estimated_reservoir_inflow_bopd, r.scenario.estimated_reservoir_inflow_bopd, r.scenario.estimated_reservoir_inflow_bopd - r.current.estimated_reservoir_inflow_bopd, 1, false],
+                    ['Pump capacity (BOPD)', r.current.pump_capacity_bopd, r.scenario.pump_capacity_bopd, r.scenario.pump_capacity_bopd - r.current.pump_capacity_bopd, 1, false],
+                    ['Production (BOPD)', r.current.estimated_oil_production_bopd, r.scenario.estimated_oil_production_bopd, r.delta.production_delta_bopd, 1, false],
+                    ['SOR (t/bbl)', r.current.steam_oil_ratio_t_per_bbl, r.scenario.steam_oil_ratio_t_per_bbl, r.delta.sor_delta_t_per_bbl, 4, true],
+                    ['Energy (kWh)', r.current.total_energy_kwh, r.scenario.total_energy_kwh, r.delta.energy_delta_kwh, 0, true],
+                    ['Status', r.delta.status_from, r.delta.status_to, null, null, false]
+                ];
+                document.getElementById('sim-body').innerHTML = rows.map(x =>
+                    '<tr><td class="py-2 px-3">' + x[0] + '</td><td class="py-2 px-3">' + fmt(x[1], x[4]) + '</td><td class="py-2 px-3">' + fmt(x[2], x[4]) +
+                    '</td><td class="py-2 px-3">' + (x[3] === null ? (r.delta.status_changed ? 'changed' : 'unchanged') : fmtDelta(x[3], x[4], x[5])) + '</td></tr>').join('') +
+                    '<tr><td class="py-2 px-3">Limiting factor</td><td class="py-2 px-3">' + r.delta.limiting_from + '</td><td class="py-2 px-3">' + r.delta.limiting_to + '</td><td class="py-2 px-3">—</td></tr>';
+                document.getElementById('sim-status').textContent = 'Scenario evaluated (' + r.mode + '). Limiting: ' + r.scenario.production_limiting_factor + '.';
+            } catch (e) { document.getElementById('sim-status').textContent = 'Simulation failed: ' + e.message; }
+            btn.disabled = false;
+            icons();
+        }
+
+        async function runOptimization() {
+            if (!state.wellId) return banner('Select a well first.', false);
+            const btn = document.getElementById('btn-opt');
+            btn.disabled = true;
+            document.getElementById('opt-status').textContent = 'Evaluating scenarios...';
+            try {
+                state.opt = await api('/api/v1/wells/' + encodeURIComponent(state.wellId) + '/optimize',
+                    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                document.getElementById('sys-opt').textContent = 'READY';
+                document.getElementById('sys-opt').className = 'text-emerald-400';
+                renderOpt();
+                renderCharts();
+                document.getElementById('opt-status').textContent = 'Optimization complete (' + state.opt.mode + ').';
+            } catch (e) { document.getElementById('opt-status').textContent = 'Optimization failed: ' + e.message; }
+            btn.disabled = false;
+            icons();
+        }
+        function renderOpt() {
+            const o = state.opt;
+            const kv = (label, cur, rec, digits, invert) =>
+                '<div>' + label + ': <span class="text-slate-400">' + fmt(cur, digits) + '</span> → <strong class="text-amber-200">' + fmt(rec, digits) + '</strong> (' + fmtDelta(rec - cur, digits, invert) + ')</div>';
+            document.getElementById('opt-current').innerHTML =
+                '<div>Steam: ' + fmt(o.current.steam_volume_t, 0) + ' t • Soak: ' + fmt(o.current.soak_time_h, 0) + ' h • SPM: ' + fmt(o.current.spm) + ' • Stroke: ' + fmt(o.current.stroke_in, 0) + ' in</div>' +
+                '<div>Production: ' + fmt(o.current.estimated_oil_production_bopd) + ' BOPD • SOR: ' + fmt(o.current.steam_oil_ratio_t_per_bbl, 4) + ' • Energy: ' + fmt(o.current.total_energy_kwh, 0) + ' kWh • ' + o.current.overall_engineering_status + '</div>';
+            const r = o.recommended;
+            document.getElementById('opt-rec').innerHTML =
+                '<div>Steam: ' + fmt(r.inputs.steam_volume_t, 0) + ' t • Press: ' + fmt(r.inputs.steam_injection_pressure_bar, 0) + ' bar • Soak: ' + fmt(r.inputs.soak_time_h, 0) + ' h • SPM: ' + fmt(r.inputs.spm) + ' • Stroke: ' + fmt(r.inputs.stroke_in, 0) + ' in</div>' +
+                kv('Production (BOPD)', o.current.estimated_oil_production_bopd, r.estimated_oil_production_bopd, 1, false) +
+                kv('SOR (t/bbl)', o.current.steam_oil_ratio_t_per_bbl, r.steam_oil_ratio_t_per_bbl, 4, true) +
+                kv('Energy (kWh)', o.current.total_energy_kwh, r.total_energy_kwh, 0, true) +
+                '<div>Status: ' + o.current.overall_engineering_status + ' → ' + r.overall_engineering_status + ' • Objective score: ' + fmt(o.objective_score, 4) + ' (prototype)</div>';
+            document.getElementById('opt-eval').textContent = '• ' + o.scenarios_evaluated + ' scenarios evaluated';
+            document.getElementById('opt-top5').innerHTML = o.top_scenarios.map(s =>
+                '<tr><td class="py-2 px-3 font-bold">' + s.rank + '</td><td class="py-2 px-3">' + fmt(s.inputs.steam_volume_t, 0) + '</td><td class="py-2 px-3">' + fmt(s.inputs.soak_time_h, 0) + '</td><td class="py-2 px-3">' + fmt(s.inputs.spm) + '</td><td class="py-2 px-3">' + fmt(s.inputs.stroke_in, 0) + '</td><td class="py-2 px-3">' + fmt(s.estimated_oil_production_bopd) + '</td><td class="py-2 px-3">' + fmt(s.steam_oil_ratio_t_per_bbl, 4) + '</td><td class="py-2 px-3">' + fmt(s.total_energy_kwh, 0) + '</td><td class="py-2 px-3">' + riskPill(s.overall_engineering_status) + '</td><td class="py-2 px-3">' + fmt(s.score, 4) + '</td></tr>').join('');
+            document.getElementById('opt-why').innerHTML = o.why_recommended.map(x => '<li>' + x + '</li>').join('');
+        }
+
+        async function loadAudit() {
+            try {
+                const a = await api('/api/v1/audit/logs');
+                document.getElementById('audit-count').textContent = a.total_records;
+                document.getElementById('audit-body').innerHTML = (a.records || []).slice().reverse().map(e =>
+                    '<tr><td class="py-2 px-3">' + (e.timestamp || '—') + '</td><td class="py-2 px-3 font-bold text-slate-200">' + (e.event_id || '—') + '</td><td class="py-2 px-3">' + (e.well_id || '—') + '</td><td class="py-2 px-3">' + (e.css_phase || '—') + '</td><td class="py-2 px-3">' + fmt(e.oil_rate_bopd) + '</td><td class="py-2 px-3 text-brand-accent">' + String(e.sha256_hash || '').slice(0, 12) + '</td></tr>').join('');
+            } catch (e) { document.getElementById('audit-body').innerHTML = '<tr><td colspan="6" class="py-2 px-3 text-rose-400">Audit unavailable: ' + e.message + '</td></tr>'; }
+        }
+
+        document.getElementById('api-base').value = apiBase();
+        document.getElementById('docs-link').href = apiBase() + '/docs';
+        document.getElementById('sys-opt').textContent = 'NOT RUN';
+        refreshAll();
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: sih_sih26120_api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - PROBLEM_ID=SIH26120
+    restart: unless-stopped
+
+  web_preview:
+    image: nginx:alpine
+    container_name: sih_sih26120_web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+    restart: unless-stopped
