@@ -171,7 +171,7 @@ export default function Inspector({
     if (tab === "HISTORY" && wellId) {
       setHistoryLoading(true);
       Promise.all([
-        api.history({ well_id, include_derived: false, include_synthetic: false, include_live: true, limit: 100 }),
+        api.history({ well_id: wellId, include_derived: false, include_synthetic: false, include_live: true, limit: 100 }),
         api.historyCoverage(wellId),
       ])
         .then(([history, coverage]) => {
