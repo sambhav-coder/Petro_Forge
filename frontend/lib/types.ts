@@ -1,6 +1,14 @@
 /* Backend response types — mirrors project/app.py Pydantic schemas.
    Backend is the source of truth; do not duplicate physics here. */
 
+export interface DataSummary {
+  schema_version: string;
+  synthetic_generator_version: string;
+  store: { telemetry: number; wells: number; cycles: number };
+  by_provenance: Record<string, number>;
+  cataloged_sources: number;
+}
+
 export interface WellSummary {
   well_id: string;
   last_update: string;

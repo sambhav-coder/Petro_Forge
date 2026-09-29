@@ -28,3 +28,11 @@ node_modules/
 .next/
 dist/
 build/
+
+# PetroForge data artifacts (Priority 1)
+project/data/raw/*
+!project/data/raw/.gitkeep
+project/data/processed/
+*.parquet
+*.pkl
+models/

@@ -199,9 +199,11 @@ project/
 
 ## 12. 🧪 Testing & Validation
 
-**56/56 tests passing** (`pytest -q`): 19 telemetry/API regression + 21 physics
-directional-behavior + 16 simulation/optimizer tests (side-effect freedom, determinism,
-bounds, sorting, edge cases, contracts). Additionally validated live: 38/38 end-to-end
+**85/85 tests passing** (`pytest -q`): 19 telemetry/API regression + 21 physics
+directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
+(catalog, schema, units, cleaning, physical validation, provenance, synthetic
+determinism, physics reuse, pipeline, repository, data API, telemetry compat,
+path safety). Additionally validated live: 38/38 end-to-end
 checks (full journey, physics directionals A–H, risk reproducibility, 243-grid,
 404/422 handling) and 9/9 dashboard contract checks.
 
@@ -219,7 +221,8 @@ python app.py
 
 - API: http://127.0.0.1:8000 · Swagger: http://127.0.0.1:8000/docs
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
-- Tests: `pytest -q` in `project/` (expect 56 passed)
+- Tests: `pytest -q` in `project/` (expect 85 passed)
+- Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
 
 ## 14. 🐳 Docker
 

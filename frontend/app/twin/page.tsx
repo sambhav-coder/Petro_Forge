@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, apiBase } from "@/lib/api";
 import type {
   CameraPreset,
+  DataSummary,
   IsolatableKind,
   OptimizeResponse,
   SceneSelection,
@@ -33,6 +34,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [optLoading, setOptLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [dataSummary, setDataSummary] = useState<DataSummary | null>(null);
 
   const loadWell = useCallback(async (id: string) => {
     const [w, t] = await Promise.all([api.well(id), api.twin(id)]);
@@ -47,6 +49,7 @@ export default function Home() {
     try {
       await api.health();
       setConnected(true);
+      api.dataSummary().then(setDataSummary).catch(() => setDataSummary(null));
       const wl = await api.wells();
       setWells(wl);
       if (wl.wells.length > 0) {
@@ -307,6 +310,35 @@ export default function Home() {
           <span><span className="text-teal-300">■</span> selected</span>
           <span><span className="text-slate-400">■</span> steel</span>
           <span><span style={{ color: "#1f2733" }}>■</span> rod</span>
+        </div>
+        <div className="flex items-center gap-1.5 ml-3 text-[10px] font-mono" title="Data foundation: cataloged sources and stored-record provenance">
+          <span className="text-slate-500">DATA</span>
+          {dataSummary ? (
+            <>
+              <span className="text-slate-300">{dataSummary.cataloged_sources} sources</span>
+              {Object.entries(dataSummary.by_provenance).map(([prov, n]) => (
+                <span
+                  key={prov}
+                  className={`px-1.5 py-0.5 rounded border ${
+                    prov === "BAGHEWALA_FIELD"
+                      ? "bg-leaf/15 text-leaf border-leaf/40"
+                      : prov === "SYNTHETIC_BAGHEWALA"
+                        ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                        : prov === "PUBLIC_REFERENCE"
+                          ? "bg-sky-500/15 text-sky-300 border-sky-500/30"
+                          : "bg-slate-700/60 text-slate-300 border-slate-600/50"
+                  }`}
+                >
+                  {prov.replace("_BAGHEWALA", "")}×{n}
+                </span>
+              ))}
+              {Object.keys(dataSummary.by_provenance).length === 0 && (
+                <span className="text-slate-600">store empty</span>
+              )}
+            </>
+          ) : (
+            <span className="text-slate-600">—</span>
+          )}
         </div>
         <div className="flex-1" />
         <div className="text-[10px] font-mono text-slate-500">

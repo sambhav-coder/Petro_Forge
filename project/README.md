@@ -11,8 +11,27 @@ joint CSS × SRP grid optimization → dashboard. No ML, no database, no field c
 - `twin_physics.py` — deterministic prototype engineering models (documented in module docstring)
 - `twin_optimize.py` — scenario comparison + 243-scenario grid optimizer (weights 0.40/0.25/0.15/0.20, prototype)
 - `index.html` — dashboard; real `fetch()` calls only, no mock engineering values
-- `test_app.py` / `test_twin_physics.py` / `test_twin_optimize.py` — 56 tests
+- `test_app.py` / `test_twin_physics.py` / `test_twin_optimize.py` / `test_data_foundation.py` — 85 tests
 - `solution.md` — full technical solution document
+- `data/` — Priority 1 data foundation: schemas, provenance, units, quality,
+  cleaning, physical validation, feature engineering (reuses `twin_physics`),
+  seeded synthetic generator, repository abstraction, deterministic pipeline
+- `data_catalog/` — researched sources, dataset catalog, value provenance, docs
+
+## Data foundation (Priority 1)
+
+Provenance-first pipeline (`data/`): canonical schemas (nullable) → unit
+normalization (ambiguous units flagged, never silently converted) → quality
+model (VALID/WARNING/INVALID/MISSING/DUPLICATE) → hard-physics reject vs soft
+Baghewala-plausible warn → dedupe → `twin_physics`-derived features → store
+(in-memory runtime, JSONL files for offline use).
+
+Honest status: granular public Baghewala telemetry **was not found**; field
+evidence is aggregate-level. Granular records are `SYNTHETIC_BAGHEWALA` only
+(seeded generator v`synthetic_baghewala/1.0`, seed 42); public datasets are
+`PUBLIC_REFERENCE` (methods only, raw files never committed). Full docs:
+`data_catalog/README.md`. New endpoints: `GET /api/v1/data/sources|catalog|
+quality|summary`, `POST /api/v1/data/ingest` (JSON body, capped, no uploads).
 
 ## API overview
 

@@ -1,4 +1,4 @@
-import type { OptimizeResponse, TwinSnapshot, WellsResponse, WellTelemetry } from "./types";
+import type { DataSummary, OptimizeResponse, TwinSnapshot, WellsResponse, WellTelemetry } from "./types";
 
 export function apiBase(): string {
   const raw =
@@ -36,8 +36,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({}),
     }),
-  ingestDemo: (wellId: string) =>
-    request<unknown>(`/api/v1/telemetry/ingest`, {
+  dataSummary: () => request<DataSummary>(`/api/v1/data/summary`),
+  ingestDemo: (wellId: string) =>    request<unknown>(`/api/v1/telemetry/ingest`, {
       method: "POST",
       body: JSON.stringify({
         well_id: wellId,

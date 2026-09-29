@@ -28,15 +28,21 @@ from enum import Enum
 import datetime
 import hashlib
 import json
+import os
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Annotated, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 import uvicorn
 
 import twin_physics
 import twin_optimize
+
+from data import DATA_SCHEMA_VERSION, SYNTHETIC_GENERATOR_VERSION
+from data.pipeline import ingest_telemetry_batch
+from data.provenance import ProvenanceClass
+from data.repository import InMemoryRepository
 
 
 app = FastAPI(
@@ -574,6 +580,98 @@ async def get_audit_logs():
         "total_records": len(AUDIT_LOGS),
         "records": AUDIT_LOGS[-20:],
     }
+
+
+# ---------------- Priority 1: data foundation ----------------
+# Canonical data store (in-memory runtime; JSONL/file backends available in
+# data.repository for offline use). Existing telemetry endpoints unchanged.
+
+DATA_REPO = InMemoryRepository()
+DATA_QUALITY_LOG: List[str] = []  # quality statuses observed via /data/ingest
+
+_CATALOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_catalog")
+
+
+def _load_catalog_json(name: str) -> Any:
+    path = os.path.join(_CATALOG_DIR, name)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+class DataIngestRequest(BaseModel):
+    records: List[Dict[str, Any]] = Field(..., min_length=1, max_length=5000)
+    source_id: str = Field(default="unspecified", min_length=1, max_length=128)
+    provenance: ProvenanceClass = ProvenanceClass.UNKNOWN
+    units: Optional[Dict[str, str]] = None
+
+
+@app.get("/api/v1/data/sources", tags=["Data Foundation"])
+async def data_sources():
+    """Researched source registry (metadata/citations only)."""
+    doc = _load_catalog_json("data_sources.json")
+    sources = doc.get("sources", []) if isinstance(doc, dict) else []
+    return {"version": doc.get("version", "1.0") if isinstance(doc, dict) else "1.0",
+            "count": len(sources), "sources": sources}
+
+
+@app.get("/api/v1/data/catalog", tags=["Data Foundation"])
+async def data_catalog():
+    """Dataset catalog incl. the honest telemetry-availability statement."""
+    doc = _load_catalog_json("data_catalog.json")
+    if not isinstance(doc, dict) or not doc:
+        return {"version": "1.0", "datasets": [],
+                "telemetry_availability_statement": "Catalog unavailable."}
+    return doc
+
+
+@app.get("/api/v1/data/quality", tags=["Data Foundation"])
+async def data_quality():
+    """Aggregate quality-status counts observed by the ingestion pipeline."""
+    by_status: Dict[str, int] = {}
+    for s in DATA_QUALITY_LOG:
+        by_status[s] = by_status.get(s, 0) + 1
+    return {"total_ingested": len(DATA_QUALITY_LOG), "by_status": by_status}
+
+
+@app.get("/api/v1/data/summary", tags=["Data Foundation"])
+async def data_summary():
+    """Store counts + provenance breakdown of canonical telemetry."""
+    by_provenance: Dict[str, int] = {}
+    for r in DATA_REPO.get_telemetry():
+        key = str(r.provenance.value if hasattr(r.provenance, "value") else r.provenance)
+        by_provenance[key] = by_provenance.get(key, 0) + 1
+    sources = _load_catalog_json("data_sources.json")
+    return {
+        "schema_version": DATA_SCHEMA_VERSION,
+        "synthetic_generator_version": SYNTHETIC_GENERATOR_VERSION,
+        "store": DATA_REPO.counts(),
+        "by_provenance": by_provenance,
+        "cataloged_sources": len(sources.get("sources", [])) if isinstance(sources, dict) else 0,
+    }
+
+
+@app.post("/api/v1/data/ingest", status_code=status.HTTP_201_CREATED, tags=["Data Foundation"])
+async def data_ingest(payload: DataIngestRequest):
+    """Validate + clean + store canonical telemetry records (JSON body only).
+
+    No filesystem access, no uploads, no path handling — records arrive in
+    the request body and pass through the deterministic pipeline.
+    """
+    report, _features = ingest_telemetry_batch(
+        payload.records,
+        DATA_REPO,
+        source_id=payload.source_id,
+        provenance=payload.provenance.value,
+        units=payload.units,
+        with_features=False,
+    )
+    DATA_QUALITY_LOG.extend(
+        [k for k, v in report.quality_by_status.items() for _ in range(v)]
+    )
+    return report.to_dict()
 
 
 @app.post("/api/v1/action/dispatch", response_model=DispatchResponse, tags=["Operations"])
