@@ -1,0 +1,107 @@
+{
+ "description": "Authoritative coverage matrix for verified public well-specific records currently represented in PetroForge. These are NOT the only wells in Baghewala field; only wells with sufficient publicly verifiable well-specific evidence are represented here.",
+ "generated_at": "2026-09-29",
+ "generator": "manual curation from verified sources; validated by bootstrap loader",
+ "total_verified_wells": 5,
+ "version": "1.0",
+ "scope": "WELL_LEVEL_PUBLIC_COVERAGE",
+ "telemetry_availability": "Continuous public SCADA telemetry was not found for any well. No per-well continuous SPM/VFD/pressure/temperature streams were found publicly. All telemetry_data flags are false.",
+ "time_series_note": "No well-specific observation in this registry is safe for a future time-series dataset yet (all time_series_safe=false); see per-well reasons. Field-level values must never be attached to individual wells.",
+ "canonical_file": "project/data/public/baghewala_well_coverage.json",
+ "wells": [
+  {
+   "well_id": "BGW-01",
+   "well_registry": true,
+   "status_records": true,
+   "status_data": true,
+   "css_records": false,
+   "css_data": false,
+   "production_records": false,
+   "production_data": false,
+   "telemetry_data": false,
+   "coverage_level": "PARTIAL_HISTORICAL",
+   "time_series_safe": false,
+   "time_series_exclusion_reason": "Historical/status evidence only; no telemetry timestamps.",
+   "sources": [
+    "telegraph_oil_begin_drill_2016",
+    "aapg_baghewala1_1995"
+   ],
+   "notes": "Discovery well (1991); 1991-94 test evidence; current status not publicly established."
+  },
+  {
+   "well_id": "BGW-04",
+   "well_registry": true,
+   "status_records": true,
+   "status_data": true,
+   "css_records": false,
+   "css_data": false,
+   "production_records": false,
+   "production_data": false,
+   "telemetry_data": false,
+   "coverage_level": "PARTIAL_HISTORICAL",
+   "time_series_safe": false,
+   "time_series_exclusion_reason": "Historical/status evidence only; no telemetry timestamps.",
+   "sources": [
+    "telegraph_oil_begin_drill_2016"
+   ],
+   "notes": "1991-94 test evidence alongside BGW-01; later status not publicly established."
+  },
+  {
+   "well_id": "BGW-08",
+   "well_registry": true,
+   "status_records": true,
+   "status_data": true,
+   "css_records": true,
+   "css_data": true,
+   "production_records": true,
+   "production_data": true,
+   "telemetry_data": false,
+   "coverage_level": "PARTIAL_HISTORICAL_WITH_CSS",
+   "time_series_safe": false,
+   "time_series_exclusion_reason": "Sparse reports with month-level precision; derived midpoint present; no continuous telemetry.",
+   "sources": [
+    "ogj_css_start_2018",
+    "business_standard_css_2018",
+    "toi_css_jaipur_2019",
+    "toi_record_output_2026"
+   ],
+   "notes": "First CSS/pilot evidence (2018-11 month precision); reported post-CSS range 80-90 BOPD with derived midpoint 85 BOPD; current status not publicly established."
+  },
+  {
+   "well_id": "BGW-17",
+   "well_registry": true,
+   "status_records": true,
+   "status_data": true,
+   "css_records": true,
+   "css_data": true,
+   "production_records": false,
+   "production_data": false,
+   "telemetry_data": false,
+   "coverage_level": "PARTIAL_HISTORICAL_WITH_CSS",
+   "time_series_safe": false,
+   "time_series_exclusion_reason": "No exact operational timestamps; ~17-day duration only; vendor publication date is not an event date.",
+   "sources": [
+    "nakasawa_baghewala_css_2022"
+   ],
+   "notes": "CSS injection activity 2022; source reports ~17 days of injection; exact continuous start/end dates not established."
+  },
+  {
+   "well_id": "BGW-40",
+   "well_registry": true,
+   "status_records": true,
+   "status_data": true,
+   "css_records": false,
+   "css_data": false,
+   "production_records": false,
+   "production_data": false,
+   "telemetry_data": false,
+   "coverage_level": "PARTIAL_HISTORICAL",
+   "time_series_safe": false,
+   "time_series_exclusion_reason": "Technology-deployment evidence only; no telemetry timestamps.",
+   "sources": [
+    "oilindia_rajasthan_fields"
+   ],
+   "notes": "Official fishbone drilling evidence; no verified public production telemetry; operational details limited."
+  }
+ ]
+}

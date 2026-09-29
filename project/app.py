@@ -54,16 +54,53 @@ import twin_physics
 import twin_optimize
 
 from data import DATA_SCHEMA_VERSION, SYNTHETIC_GENERATOR_VERSION
+from data import history as history_engine
+from data.bootstrap import bootstrap_public_data
 from data.pipeline import ingest_telemetry_batch
 from data.provenance import ProvenanceClass
 from data.repository import InMemoryRepository
+
+# Priority 3: ML Intelligence Engine
+try:
+    from ml import (
+        InferenceEngine,
+        ModelRegistry,
+        DatasetInventory,
+        DatasetValidator,
+        ExplainabilityEngine,
+        get_provenance_tracker,
+        MLEligibility,
+        ModelTask,
+        ModelStatus,
+    )
+    from ml.schemas import (
+        PredictionRequest,
+        PredictionResponse,
+        DatasetValidationReport,
+    )
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    # Create stubs for type hints
+    InferenceEngine = None
+    ModelRegistry = None
+    DatasetInventory = None
+    DatasetValidator = None
+    ExplainabilityEngine = None
+    get_provenance_tracker = None
+    MLEligibility = None
+    ModelTask = None
+    ModelStatus = None
+    PredictionRequest = None
+    PredictionResponse = None
+    DatasetValidationReport = None
 
 
 APP_VERSION = "4.0.0-block4"
 
 app = FastAPI(
     title="SIH26120 - Digital Twin for Well-to-Surface Optimization of Cyclic Steam Stimulation (CSS) and Sucker Rod Pump (SRP) Operations for Heavy Oil Wells of Baghewala Field.",
-    description="Well-to-surface Digital Twin for Oil India Limited Baghewala heavy-oil wells (CSS + SRP). Block 4: CSS cycle planning, SRP dynamometer card, predictive analytics, failure-probability models and real-time monitoring over deterministic prototype physics.",
+    description="Well-to-surface Digital Twin for Oil India Limited Baghewala heavy-oil wells (CSS + SRP). Block 3: what-if simulation and joint CSSxSRP optimization. Block 4: CSS cycle planning, SRP dynamometer card, predictive analytics, failure-probability models and real-time monitoring. Priority 2-3: historical time-series engine and ML Intelligence Engine with data validation, anomaly detection, and forecasting framework.",
     version=APP_VERSION,
 )
 
@@ -300,11 +337,13 @@ OptimizeResponse.model_rebuild()
 
 class WellSummary(BaseModel):
     well_id: str
-    last_update: str
-    css_phase: CSSPhase
-    oil_rate_bopd: float
-    spm: float
-    stroke_in: float
+    last_update: Optional[str] = None
+    css_phase: Optional[str] = None
+    oil_rate_bopd: Optional[float] = None
+    spm: Optional[float] = None
+    stroke_in: Optional[float] = None
+    provenance: str = "UNKNOWN"
+    data_status: str = "LIVE_TELEMETRY"
 
 
 class DispatchRequest(BaseModel):
@@ -356,13 +395,54 @@ def _telemetry_hash(well_id: str, event_id: str, timestamp: str, state: Dict) ->
 
 
 def _well_summary(well_id: str, record: WellTelemetry) -> Dict:
+    phase = record.css_phase.value if hasattr(record.css_phase, "value") else str(record.css_phase)
     return {
         "well_id": well_id,
         "last_update": record.timestamp,
-        "css_phase": record.css_phase,
+        "css_phase": phase,
         "oil_rate_bopd": record.oil_rate_bopd,
         "spm": record.spm,
         "stroke_in": record.stroke_in,
+        "provenance": "UNKNOWN",
+        "data_status": "LIVE_TELEMETRY",
+    }
+
+
+def _public_summary(pub: Dict[str, Any]) -> Dict:
+    """List entry for a verified public well: NO telemetry fabricated."""
+    return {
+        "well_id": pub["well_id"],
+        "last_update": None,
+        "css_phase": None,
+        "oil_rate_bopd": None,
+        "spm": None,
+        "stroke_in": None,
+        "provenance": pub.get("provenance", "BAGHEWALA_FIELD"),
+        "data_status": "PUBLIC_FIELD_RECORD",
+    }
+
+
+def _public_detail(well_id: str, pub: Dict[str, Any]) -> Dict:
+    """Public-record envelope: historical/status data, telemetry null."""
+    css = [c for c in PUBLIC_CSS if c.get("well_id") == well_id]
+    prod = [p for p in PUBLIC_PROD_WELL if p.get("well_id") == well_id]
+    return {
+        "well_id": well_id,
+        "data_status": "PUBLIC_FIELD_RECORD",
+        "provenance": pub.get("provenance", "BAGHEWALA_FIELD"),
+        "field": pub.get("field"),
+        "reservoir": pub.get("reservoir"),
+        "status": pub.get("status"),
+        "status_as_of": pub.get("status_as_of"),
+        "lift_method": pub.get("lift_method"),
+        "css_status": pub.get("css_status"),
+        "css_cycle_count": pub.get("css_cycle_count"),
+        "css": css,
+        "production": prod,
+        "telemetry": None,
+        "source_id": pub.get("source_id"),
+        "confidence": pub.get("confidence"),
+        "notes": pub.get("notes"),
     }
 
 
@@ -596,10 +676,38 @@ async def ingest_telemetry(payload: WellTelemetry):
     Block 2 attaches a concise deterministic engineering summary computed
     by twin_physics. No ML, no risk scoring beyond transparent engineering
     indicators, no AI inference.
+
+    Priority 2: also creates a historical observation snapshot.
     """
     res = _ingest_state(payload)
     state, snapshot, event_id, sha_hash = res["state"], res["snapshot"], res["event_id"], res["sha"]
     ts = state.timestamp
+
+    # Priority 2: create historical observation snapshot (API ingests only; live
+    # synthetic-field readings are kept out of the ML-safe history store).
+    hist_obs = history_engine.HistoricalObservation(
+        record_id=f"TEL-{state.well_id}-{event_id}",
+        timestamp_start=ts,
+        timestamp_end=ts,
+        timestamp_precision=history_engine.TemporalPrecision.DATETIME,
+        original_period=ts,
+        approximate=False,
+        well_id=state.well_id,
+        scope=history_engine.ObservationScope.WELL,
+        variable="oil_rate_bopd",
+        value=state.oil_rate_bopd,
+        unit="bopd",
+        value_kind=history_engine.ValueKind.MEASURED,
+        source_id="live_telemetry_ingest",
+        provenance=history_engine.ProvenanceClass.UNKNOWN,
+        data_status="LIVE_TELEMETRY",
+        time_series_safe=True,
+        ml_safe=True,
+        data_quality="VALID",
+        notes="Live telemetry snapshot created on ingest.",
+    )
+    _HISTORY_REPO.insert(hist_obs)
+
     summary = TwinSummaryResponse(
         estimated_oil_production_bopd=snapshot["estimated_oil_production_bopd"],
         steam_oil_ratio_t_per_bbl=snapshot["steam_oil_ratio_t_per_bbl"],
@@ -619,23 +727,51 @@ async def ingest_telemetry(payload: WellTelemetry):
     )
 
 
+# ---------------- Priority 1 recovery: public Baghewala bootstrap ----------------
+# Verified public registry loads at startup so the twin never opens empty.
+# 5 publicly verified well records (Baghewala field contains additional
+# wells; only wells with sufficient publicly verifiable well-specific
+# evidence are represented here). Telemetry wells (WELL_STORE) take
+# precedence in merged views; public records are never upgraded into
+# telemetry.
+_PUBLIC_BOOT = bootstrap_public_data()
+PUBLIC_WELLS: Dict[str, Dict[str, Any]] = _PUBLIC_BOOT["wells"]
+PUBLIC_CSS: List[Dict[str, Any]] = _PUBLIC_BOOT["css"]
+PUBLIC_PROD_WELL: List[Dict[str, Any]] = _PUBLIC_BOOT["production_well"]
+PUBLIC_PROD_FIELD: List[Dict[str, Any]] = _PUBLIC_BOOT["production_field"]
+PUBLIC_FIELD: Dict[str, Any] = _PUBLIC_BOOT["field"]
+BOOTSTRAP_REPORT: Dict[str, Any] = _PUBLIC_BOOT["report"]
+
+
 @app.get("/api/v1/wells", tags=["Wells"])
 async def list_wells():
-    """Lightweight summaries of all wells with ingested telemetry, sorted by well_id."""
-    wells = [_well_summary(well_id, record) for well_id, record in sorted(WELL_STORE.items())]
+    """Merged well list: live telemetry wells + 5 publicly verified well records.
+
+    Public entries carry null telemetry fields (never fabricated) and
+    provenance BAGHEWALA_FIELD / data_status PUBLIC_FIELD_RECORD.
+    """
+    wells = [_well_summary(wid, rec) for wid, rec in sorted(WELL_STORE.items())]
+    seen = set(WELL_STORE.keys())
+    for wid in sorted(PUBLIC_WELLS.keys()):
+        if wid not in seen:
+            wells.append(_public_summary(PUBLIC_WELLS[wid]))
     return {"total_wells": len(wells), "wells": wells}
 
 
 @app.get("/api/v1/wells/{well_id}", tags=["Wells"])
 async def get_well(well_id: str):
-    """Latest accepted telemetry record for one well. 404 when unknown."""
+    """Latest telemetry for ingested wells; public-record envelope for
+    publicly verified well records without telemetry. 404 when unknown."""
     record = WELL_STORE.get(well_id)
-    if record is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
-        )
-    return record
+    if record is not None:
+        return record
+    pub = PUBLIC_WELLS.get(well_id)
+    if pub is not None:
+        return _public_detail(well_id, pub)
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
+    )
 
 
 @app.get("/api/v1/wells/{well_id}/twin", response_model=TwinSnapshotResponse, tags=["Digital Twin"])
@@ -643,6 +779,21 @@ async def get_well_twin(well_id: str):
     """Deterministic engineering snapshot for the well's latest state."""
     record = WELL_STORE.get(well_id)
     if record is None:
+        if well_id in PUBLIC_WELLS:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "INSUFFICIENT_PUBLIC_TELEMETRY",
+                    "message": (
+                        f"Well '{well_id}' is a verified public record "
+                        "(PUBLIC_FIELD_RECORD) with no live telemetry: twin "
+                        "snapshot unavailable. Load synthetic demo telemetry "
+                        "to exercise the physics engine."
+                    ),
+                    "twin_data_status": "INSUFFICIENT_PUBLIC_TELEMETRY",
+                    "provenance": "BAGHEWALA_FIELD",
+                },
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
@@ -803,6 +954,29 @@ async def data_catalog():
     return doc
 
 
+@app.get("/api/v1/data/coverage", tags=["Data Foundation"])
+async def data_coverage():
+    """Canonical public well-coverage matrix (5 publicly verified well records).
+
+    Authoritative source: project/data/public/baghewala_well_coverage.json.
+    Baghewala field contains additional wells; only wells with sufficient
+    publicly verifiable well-specific evidence are represented here.
+    """
+    import os as _os
+    path = _os.path.join(
+        _os.path.dirname(_os.path.abspath(__file__)), "data", "public",
+        "baghewala_well_coverage.json",
+    )
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Coverage file unavailable.",
+        )
+
+
 @app.get("/api/v1/data/quality", tags=["Data Foundation"])
 async def data_quality():
     """Aggregate quality-status counts observed by the ingestion pipeline."""
@@ -814,18 +988,36 @@ async def data_quality():
 
 @app.get("/api/v1/data/summary", tags=["Data Foundation"])
 async def data_summary():
-    """Store counts + provenance breakdown of canonical telemetry."""
+    """Store counts + provenance breakdown + public-registry status.
+
+    Historical public records are reported as records, never as telemetry.
+    """
     by_provenance: Dict[str, int] = {}
     for r in DATA_REPO.get_telemetry():
         key = str(r.provenance.value if hasattr(r.provenance, "value") else r.provenance)
         by_provenance[key] = by_provenance.get(key, 0) + 1
     sources = _load_catalog_json("data_sources.json")
+    telemetry_ids = set(WELL_STORE.keys())
     return {
         "schema_version": DATA_SCHEMA_VERSION,
         "synthetic_generator_version": SYNTHETIC_GENERATOR_VERSION,
         "store": DATA_REPO.counts(),
         "by_provenance": by_provenance,
         "cataloged_sources": len(sources.get("sources", [])) if isinstance(sources, dict) else 0,
+        "public_registry": {
+            "public_wells": len(PUBLIC_WELLS),
+            "public_css_records": len(PUBLIC_CSS),
+            "public_production_records": len(PUBLIC_PROD_WELL) + len(PUBLIC_PROD_FIELD),
+            "rejected_records": BOOTSTRAP_REPORT.get("rejected_records", 0),
+            "coverage_valid": BOOTSTRAP_REPORT.get("coverage_valid", False),
+            "coverage_file": "project/data/public/baghewala_well_coverage.json",
+        },
+        "data_status": {
+            "public_field_records": len(PUBLIC_WELLS),
+            "public_telemetry_records": 0,
+            "synthetic_records": 0,
+            "live_telemetry_wells": len(telemetry_ids),
+        },
     }
 
 
@@ -848,6 +1040,519 @@ async def data_ingest(payload: DataIngestRequest):
         [k for k, v in report.quality_by_status.items() for _ in range(v)]
     )
     return report.to_dict()
+
+
+# ---------------- Priority 2: historical / time-series engine ----------------
+# Trustworthy historical foundation with temporal precision preservation,
+# provenance isolation, and coverage-aware querying.
+
+_HISTORY_REPO = history_engine.InMemoryHistoryRepository()
+_HISTORY_BOOT = history_engine.build_public_history(_PUBLIC_BOOT)
+_BOOT_REPORT = _HISTORY_REPO.bulk_insert(_HISTORY_BOOT)
+
+
+class HistoryQueryParams(BaseModel):
+    well_id: Optional[str] = None
+    scope: Optional[str] = None
+    variable: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
+    provenance: Optional[List[str]] = None
+    precision: Optional[List[str]] = None
+    include_derived: bool = False
+    include_synthetic: bool = False
+    include_live: bool = True
+    limit: int = 100
+
+
+@app.get("/api/v1/history", tags=["History"])
+async def get_history(params: HistoryQueryParams = HistoryQueryParams()):
+    """Query historical observations with safety defaults.
+
+    Defaults exclude derived and synthetic data to prevent accidental mixing
+    of provenance classes. Explicit filters required to include them.
+    """
+    obs = _HISTORY_REPO.query(
+        well_id=params.well_id,
+        scope=params.scope,
+        variable=params.variable,
+        start=params.start,
+        end=params.end,
+        provenance=params.provenance,
+        precision=params.precision,
+        include_derived=params.include_derived,
+        include_synthetic=params.include_synthetic,
+        include_live=params.include_live,
+        limit=params.limit,
+    )
+    coverage = history_engine.compute_coverage(obs)
+    return {
+        "query": params.model_dump(exclude_none=True),
+        "count": len(obs),
+        "observations": [o.model_dump() for o in obs],
+        "coverage": coverage,
+        "metadata": {
+            "include_derived": params.include_derived,
+            "include_synthetic": params.include_synthetic,
+            "include_live": params.include_live,
+        },
+    }
+
+
+@app.get("/api/v1/history/wells/{well_id}", tags=["History"])
+async def get_well_history(well_id: str, include_derived: bool = False,
+                          include_synthetic: bool = False, include_live: bool = True,
+                          variable: Optional[str] = None, limit: int = 100):
+    """Historical observations for a specific well."""
+    obs = _HISTORY_REPO.query(
+        well_id=well_id,
+        variable=variable,
+        include_derived=include_derived,
+        include_synthetic=include_synthetic,
+        include_live=include_live,
+        limit=limit,
+    )
+    coverage = history_engine.well_coverage_summary(_HISTORY_REPO, well_id)
+    return {
+        "well_id": well_id,
+        "count": len(obs),
+        "observations": [o.model_dump() for o in obs],
+        "coverage": coverage,
+    }
+
+
+@app.get("/api/v1/history/field", tags=["History"])
+async def get_field_history(include_derived: bool = False,
+                             include_synthetic: bool = False, include_live: bool = True,
+                             variable: Optional[str] = None, limit: int = 100):
+    """Field-level historical observations."""
+    obs = _HISTORY_REPO.query(
+        scope="FIELD",
+        variable=variable,
+        include_derived=include_derived,
+        include_synthetic=include_synthetic,
+        include_live=include_live,
+        limit=limit,
+    )
+    coverage = history_engine.compute_coverage(obs)
+    return {
+        "scope": "FIELD",
+        "count": len(obs),
+        "observations": [o.model_dump() for o in obs],
+        "coverage": coverage,
+    }
+
+
+@app.get("/api/v1/history/coverage/{well_id}", tags=["History"])
+async def get_well_coverage(well_id: str):
+    """Coverage summary for a well (no observation details)."""
+    return history_engine.well_coverage_summary(_HISTORY_REPO, well_id)
+
+
+@app.get("/api/v1/history/trend/{well_id}", tags=["History"])
+async def get_well_trend(well_id: str, variable: str,
+                        include_derived: bool = False, include_synthetic: bool = False,
+                        include_live: bool = True):
+    """Trend analysis for a well's variable.
+
+    Returns INSUFFICIENT for sparse series; never fabricates trends.
+    """
+    obs = _HISTORY_REPO.query(
+        well_id=well_id,
+        variable=variable,
+        include_derived=include_derived,
+        include_synthetic=include_synthetic,
+        include_live=include_live,
+        limit=1000,
+    )
+    return history_engine.analyze_trend(obs)
+
+
+@app.get("/api/v1/history/aggregate", tags=["History"])
+async def aggregate_history(operation: str, well_id: Optional[str] = None,
+                           scope: Optional[str] = None, variable: Optional[str] = None,
+                           include_derived: bool = False, include_synthetic: bool = False,
+                           include_live: bool = True, limit: int = 100):
+    """Safe aggregation over historical observations.
+
+    Operations: count, min, max, mean, median, sum, latest, earliest.
+    Refuses inappropriate aggregations with warnings.
+    """
+    obs = _HISTORY_REPO.query(
+        well_id=well_id,
+        scope=scope,
+        variable=variable,
+        include_derived=include_derived,
+        include_synthetic=include_synthetic,
+        include_live=include_live,
+        limit=limit,
+    )
+    return history_engine.safe_aggregate(obs, operation)
+
+
+@app.get("/api/v1/history/stats", tags=["History"])
+async def get_history_stats():
+    """Historical repository statistics."""
+    return {
+        "schema_version": history_engine.HISTORY_SCHEMA_VERSION,
+        "repository": _HISTORY_REPO.counts(),
+        "bootstrap": _BOOT_REPORT,
+        "variable_registry": {
+            name: {
+                "label": spec.label,
+                "unit": spec.unit,
+                "domain": spec.domain,
+                "kind": spec.kind.value,
+                "chartable": spec.chartable,
+                "ml_eligible": spec.ml_eligible,
+            }
+            for name, spec in history_engine.VARIABLE_REGISTRY.items()
+        },
+    }
+
+
+# ---------------- Priority 3: ML Intelligence Engine ----------------
+# ML API endpoints for forecasting, anomaly detection, SRP health, and failure prediction.
+
+if ML_AVAILABLE:
+    _ML_INFERENCE_ENGINE = InferenceEngine()
+    _ML_REGISTRY = ModelRegistry()
+    _ML_DATASET_INVENTORY = DatasetInventory()
+    _ML_DATASET_VALIDATOR = DatasetValidator()
+    _ML_EXPLAINABILITY_ENGINE = ExplainabilityEngine()
+    _ML_PROVENANCE_TRACKER = get_provenance_tracker()
+else:
+    _ML_INFERENCE_ENGINE = None
+    _ML_REGISTRY = None
+    _ML_DATASET_INVENTORY = None
+    _ML_DATASET_VALIDATOR = None
+    _ML_EXPLAINABILITY_ENGINE = None
+    _ML_PROVENANCE_TRACKER = None
+
+
+class MLPredictionRequest(BaseModel):
+    """ML prediction request."""
+    task: str = Field(..., description="ML task: production_forecast, anomaly_detection, srp_health, failure_risk")
+    well_id: Optional[str] = None
+    features: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: Optional[str] = None
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+    return_explanations: bool = False
+
+
+class MLForecastRequest(BaseModel):
+    """Production forecast request."""
+    well_id: str = Field(..., min_length=1)
+    horizon_days: int = Field(default=30, ge=1, le=365)
+    features: Dict[str, Any] = Field(default_factory=dict)
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+
+
+class MLAnomalyRequest(BaseModel):
+    """Anomaly detection request."""
+    variable: str = Field(..., min_length=1)
+    value: float
+    well_id: Optional[str] = None
+    timestamp: Optional[str] = None
+    historical_window: int = Field(default=30, ge=1, le=365)
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+
+
+class MLHealthRequest(BaseModel):
+    """SRP health assessment request."""
+    well_id: str = Field(..., min_length=1)
+    features: Dict[str, Any] = Field(default_factory=dict)
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+
+
+class MLFailureRequest(BaseModel):
+    """Failure prediction request."""
+    well_id: str = Field(..., min_length=1)
+    features: Dict[str, Any] = Field(default_factory=dict)
+    model_id: Optional[str] = None
+    model_version: Optional[str] = None
+
+
+@app.get("/api/v1/ml/status", tags=["ML Intelligence"])
+async def get_ml_status():
+    """ML system status and available models."""
+    if not ML_AVAILABLE:
+        return {
+            "status": "UNAVAILABLE",
+            "version": "1.0",
+            "available_models": {},
+            "registry_summary": {},
+            "datasets": 0,
+            "timestamp": _utc_now_iso(),
+            "reason": "ML module not available",
+        }
+    return {
+        "status": "OPERATIONAL",
+        "version": "1.0",
+        "available_models": _ML_INFERENCE_ENGINE.get_available_models(),
+        "registry_summary": _ML_REGISTRY.get_registry_summary(),
+        "datasets": len(_ML_DATASET_INVENTORY.list_datasets()),
+        "timestamp": _utc_now_iso(),
+    }
+
+
+@app.get("/api/v1/ml/models", tags=["ML Intelligence"])
+async def list_ml_models(
+    task: Optional[str] = None,
+    status: Optional[str] = None,
+):
+    """List registered ML models with optional filtering."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    models = _ML_REGISTRY.list_models(task=task, status=status)
+    return {
+        "total": len(models),
+        "models": [m.model_dump() for m in models],
+    }
+
+
+@app.post("/api/v1/ml/predict", tags=["ML Intelligence"])
+async def ml_predict(request: MLPredictionRequest):
+    """Unified ML prediction endpoint.
+    
+    Routes to appropriate task-specific model based on request task.
+    Returns explicit insufficient-data state when models are unavailable.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    try:
+        task = ModelTask(request.task)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid task: {request.task}. Valid tasks: {[t.value for t in ModelTask]}",
+        )
+    
+    ml_request = PredictionRequest(
+        task=task,
+        well_id=request.well_id,
+        features=request.features,
+        timestamp=request.timestamp,
+        model_id=request.model_id,
+        model_version=request.model_version,
+        return_explanations=request.return_explanations,
+    )
+    
+    response = _ML_INFERENCE_ENGINE.predict(ml_request)
+    return response
+
+
+@app.post("/api/v1/ml/forecast", tags=["ML Intelligence"])
+async def ml_forecast(request: MLForecastRequest):
+    """Production forecasting endpoint.
+    
+    Returns explicit insufficient-data state when forecasting model unavailable.
+    Baghewala public data is insufficient for continuous production forecasting.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    response = _ML_INFERENCE_ENGINE.forecasting_model.forecast(
+        well_id=request.well_id,
+        features=request.features,
+        model_id=request.model_id,
+        model_version=request.model_version,
+        horizon_days=request.horizon_days,
+    )
+    return response
+
+
+@app.post("/api/v1/ml/anomaly", tags=["ML Intelligence"])
+async def ml_anomaly(request: MLAnomalyRequest):
+    """Anomaly detection endpoint.
+    
+    Detects anomalies in operational parameters using statistical methods.
+    Returns explicit insufficient-data state when historical context unavailable.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    response = _ML_INFERENCE_ENGINE.anomaly_detector.detect(
+        variable=request.variable,
+        value=request.value,
+        well_id=request.well_id,
+        timestamp=request.timestamp,
+        model_id=request.model_id,
+        model_version=request.model_version,
+    )
+    return response
+
+
+@app.post("/api/v1/ml/srp-health", tags=["ML Intelligence"])
+async def ml_srp_health(request: MLHealthRequest):
+    """SRP/pump health assessment endpoint.
+    
+    Returns explicit insufficient-data state when SRP operational data unavailable.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    response = _ML_INFERENCE_ENGINE.srp_health_model.assess(
+        well_id=request.well_id,
+        features=request.features,
+        model_id=request.model_id,
+        model_version=request.model_version,
+    )
+    return response
+
+
+@app.post("/api/v1/ml/failure-risk", tags=["ML Intelligence"])
+async def ml_failure_risk(request: MLFailureRequest):
+    """Failure prediction endpoint.
+    
+    Returns explicit insufficient-data state when failure model unavailable.
+    Baghewala public data lacks labeled failure data for training.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    response = _ML_INFERENCE_ENGINE.failure_model.predict(
+        well_id=request.well_id,
+        features=request.features,
+        model_id=request.model_id,
+        model_version=request.model_version,
+    )
+    return response
+
+
+@app.get("/api/v1/ml/datasets", tags=["ML Intelligence"])
+async def list_ml_datasets():
+    """List ML datasets and their eligibility."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    datasets = _ML_DATASET_INVENTORY.list_datasets()
+    return {
+        "total": len(datasets),
+        "datasets": [
+            {
+                "name": d.name,
+                "source": d.source.value,
+                "domain": d.domain,
+                "rows": d.rows,
+                "features": d.features,
+                "time_information": d.time_information,
+                "failure_labels": d.failure_labels,
+            }
+            for d in datasets
+        ],
+    }
+
+
+@app.get("/api/v1/ml/datasets/{dataset_name}/eligibility", tags=["ML Intelligence"])
+async def get_dataset_eligibility(dataset_name: str, task: str):
+    """Get ML eligibility assessment for a dataset."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    report = _ML_DATASET_INVENTORY.assess_eligibility(dataset_name, task)
+    return report.model_dump()
+
+
+@app.get("/api/v1/ml/models/{model_id}/explainability", tags=["ML Intelligence"])
+async def get_model_explainability(model_id: str, top_k: int = 5):
+    """Get feature importance for a model.
+    
+    Returns top contributing features and their importance scores.
+    Distinguishes MODEL ASSOCIATION from PHYSICAL CAUSATION.
+    """
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    model = _ML_REGISTRY.get_model(model_id)
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Model '{model_id}' not found",
+        )
+    
+    # Note: This is a placeholder - actual implementation would need
+    # the trained model object, not just metadata
+    return {
+        "model_id": model_id,
+        "model_type": model.task,
+        "feature_importance": [],
+        "limitations": [
+            "Feature importance requires trained model object",
+            "Feature importance indicates association, not causation",
+        ],
+    }
+
+
+@app.get("/api/v1/ml/provenance/summary", tags=["ML Intelligence"])
+async def get_provenance_summary():
+    """Get summary of ML provenance tracking."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    return _ML_PROVENANCE_TRACKER.get_provenance_summary()
+
+
+@app.get("/api/v1/ml/provenance/prediction/{prediction_id}", tags=["ML Intelligence"])
+async def get_prediction_provenance(prediction_id: str):
+    """Get full provenance for a specific prediction."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    return _ML_PROVENANCE_TRACKER.export_provenance(prediction_id)
+
+
+@app.get("/api/v1/ml/provenance/feature/{feature_name}", tags=["ML Intelligence"])
+async def get_feature_lineage(feature_name: str):
+    """Trace the lineage of a feature back to source columns."""
+    if not ML_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML module not available",
+        )
+    lineage = _ML_PROVENANCE_TRACKER.trace_lineage(feature_name)
+    return {
+        "feature_name": feature_name,
+        "lineage": [
+            {
+                "feature_name": prov.feature_name,
+                "source_columns": prov.source_columns,
+                "method": prov.method,
+                "parameters": prov.parameters,
+                "derived_from": prov.derived_from,
+                "timestamp": prov.timestamp,
+            }
+            for prov in lineage
+        ],
+    }
 
 
 @app.post("/api/v1/action/dispatch", response_model=DispatchResponse, tags=["Operations"])

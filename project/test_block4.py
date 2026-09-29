@@ -272,10 +272,15 @@ def test_seed_history_analytics_and_calibration():
     seed = client.post("/api/v1/demo/seed", json={"days": 40}).json()
     assert seed["status"] == "SEEDED" and len(seed["wells"]) == 4
     wells = client.get("/api/v1/wells").json()
-    assert wells["total_wells"] == 4
-    hist = client.get("/api/v1/wells/BGW-01/history").json()
+    sim_ids = {p["well_id"] for p in live_field.PROFILES}
+    listed = {w["well_id"] for w in wells["wells"]}
+    assert sim_ids <= listed
+    # Synthetic wells never reuse a real (public) Baghewala well ID.
+    assert sim_ids.isdisjoint(app_module.PUBLIC_WELLS)
+    first = live_field.PROFILES[0]["well_id"]
+    hist = client.get(f"/api/v1/wells/{first}/history").json()
     assert hist["count"] == seed["ticks"]
-    an = client.get("/api/v1/wells/BGW-01/analytics").json()
+    an = client.get(f"/api/v1/wells/{first}/analytics").json()
     # Auto-calibration discovers the simulator's hidden productivity factor.
     assert an["calibration"]["status"] == "CALIBRATED"
     assert an["calibration"]["k"] == pytest.approx(live_field.PROFILES[0]["k_true"], abs=0.03)

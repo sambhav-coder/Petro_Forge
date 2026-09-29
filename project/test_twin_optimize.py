@@ -85,7 +85,7 @@ def test_simulate_does_not_mutate_store():
     assert client.get("/api/v1/wells/BGW-01").json() == before_well
     assert client.get("/api/v1/wells/BGW-01/twin").json() == before_twin
     assert client.get("/api/v1/audit/logs").json()["total_records"] == before_audit
-    assert client.get("/api/v1/wells").json()["total_wells"] == 1
+    assert client.get("/api/v1/wells").json()["total_wells"] == len({"BGW-01"} | set(app_module.PUBLIC_WELLS))
 
 
 def test_same_scenario_same_output():

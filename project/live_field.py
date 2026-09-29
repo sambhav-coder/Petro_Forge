@@ -15,6 +15,8 @@ data (validation, audit hash, twin, analytics, ML, alerts, stream).
 - Measurement noise is Gaussian; random FAULT EVENTS (pump wear,
   wellhead pressure surge) are injected so anomaly detection and
   alerting have something real to catch. Seeded -> reproducible.
+- Well IDs use the SIM- prefix so synthetic wells can never be confused
+  with real Baghewala well records (BGW-xx public data).
 - Every reading is tagged provenance SYNTHETIC_BAGHEWALA in the event
   stream. Profiles are prototype assumptions inside the documented
   Baghewala bands (17-19 API, 46-48 C, 5-60 bopd per well).
@@ -36,19 +38,19 @@ FAULT_TICKS = (2, 5)
 START_TIME = datetime.datetime(2026, 7, 1, 6, 0, tzinfo=datetime.timezone.utc)
 
 PROFILES: List[Dict] = [
-    {"well_id": "BGW-01", "reservoir_pressure_bar": 30.0, "wellhead_pressure_bar": 10.0,
+    {"well_id": "SIM-01", "reservoir_pressure_bar": 30.0, "wellhead_pressure_bar": 10.0,
      "api_gravity": 18.2, "reservoir_temperature_c": 47.2, "steam_volume_t": 850.0,
      "steam_injection_pressure_bar": 65.0, "soak_time_h": 48.0, "spm": 5.0, "stroke_in": 96.0,
      "water_cut_percent": 35.0, "k_true": 0.28, "offset_days": 0.0},
-    {"well_id": "BGW-02", "reservoir_pressure_bar": 24.0, "wellhead_pressure_bar": 11.0,
+    {"well_id": "SIM-02", "reservoir_pressure_bar": 24.0, "wellhead_pressure_bar": 11.0,
      "api_gravity": 17.4, "reservoir_temperature_c": 46.4, "steam_volume_t": 600.0,
      "steam_injection_pressure_bar": 55.0, "soak_time_h": 72.0, "spm": 7.5, "stroke_in": 100.0,
      "water_cut_percent": 45.0, "k_true": 0.22, "offset_days": 9.0},
-    {"well_id": "BGW-03", "reservoir_pressure_bar": 38.0, "wellhead_pressure_bar": 9.0,
+    {"well_id": "SIM-03", "reservoir_pressure_bar": 38.0, "wellhead_pressure_bar": 9.0,
      "api_gravity": 18.8, "reservoir_temperature_c": 47.8, "steam_volume_t": 1000.0,
      "steam_injection_pressure_bar": 75.0, "soak_time_h": 36.0, "spm": 4.0, "stroke_in": 120.0,
      "water_cut_percent": 25.0, "k_true": 0.32, "offset_days": 17.0},
-    {"well_id": "BGW-04", "reservoir_pressure_bar": 21.0, "wellhead_pressure_bar": 12.0,
+    {"well_id": "SIM-04", "reservoir_pressure_bar": 21.0, "wellhead_pressure_bar": 12.0,
      "api_gravity": 17.2, "reservoir_temperature_c": 46.1, "steam_volume_t": 450.0,
      "steam_injection_pressure_bar": 45.0, "soak_time_h": 24.0, "spm": 8.5, "stroke_in": 110.0,
      "water_cut_percent": 50.0, "k_true": 0.25, "offset_days": 4.0},

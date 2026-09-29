@@ -7,12 +7,23 @@ import type {
   DynacardResponse,
   FieldOverview,
   HistoryPoint,
+  HistoryResponse,
   LiveStatus,
+  MLAnomalyRequest,
+  MLAnomalyResult,
+  MLFailureRequest,
+  MLFailureResult,
+  MLForecastRequest,
+  MLForecastResult,
+  MLHealthRequest,
+  MLHealthResult,
+  MLStatus,
   OptimizeResponse,
   PredictResponse,
   ScenarioOverrides,
   SimulateResponse,
   TwinSnapshot,
+  WellCoverageSummary,
   WellsResponse,
   WellTelemetry,
 } from "./types";
@@ -56,7 +67,7 @@ export const api = {
   cyclePlan: (id: string) => request<CyclePlanResponse>(`${well(id)}/cycle/plan`, post()),
   dynacard: (id: string) => request<DynacardResponse>(`${well(id)}/dynacard`),
   predict: (id: string) => request<PredictResponse>(`${well(id)}/predict`),
-  history: (id: string, limit = 240) =>
+  wellHistory: (id: string, limit = 240) =>
     request<{ well_id: string; count: number; points: HistoryPoint[] }>(
       `${well(id)}/history?limit=${limit}`
     ),
@@ -87,4 +98,35 @@ export const api = {
       vfd_percent: 55.0,
       water_cut_percent: 35.0,
     })),
+  history: (params: {
+    well_id?: string;
+    include_derived?: boolean;
+    include_synthetic?: boolean;
+    include_live?: boolean;
+    limit?: number;
+  }) => request<HistoryResponse>(`/api/v1/history?${new URLSearchParams(params as Record<string, string>).toString()}`),
+  historyCoverage: (wellId: string) => request<WellCoverageSummary>(`/api/v1/history/coverage/${encodeURIComponent(wellId)}`),
+  
+  // Priority 3: ML Intelligence API
+  mlStatus: () => request<MLStatus>("/api/v1/ml/status"),
+  mlForecast: (body: MLForecastRequest) =>
+    request<MLForecastResult>("/api/v1/ml/forecast", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  mlAnomaly: (body: MLAnomalyRequest) =>
+    request<MLAnomalyResult>("/api/v1/ml/anomaly", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  mlHealth: (body: MLHealthRequest) =>
+    request<MLHealthResult>("/api/v1/ml/srp-health", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  mlFailure: (body: MLFailureRequest) =>
+    request<MLFailureResult>("/api/v1/ml/failure-risk", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

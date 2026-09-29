@@ -1,0 +1,83 @@
+{
+  "test_model": {
+    "model_id": "test_model",
+    "task": "production_forecast",
+    "version": "1.0",
+    "status": "CANDIDATE",
+    "dataset_id": "test_dataset",
+    "dataset_version": "1.0",
+    "feature_schema": {
+      "spm": "float",
+      "stroke": "float"
+    },
+    "hyperparameters": {
+      "n_estimators": 100
+    },
+    "training_timestamp": "2026-09-29T17:30:28.121534+00:00",
+    "metrics": {
+      "mae": 1.5
+    },
+    "validation_metrics": {
+      "mae": 1.6
+    },
+    "test_metrics": {
+      "mae": 1.7
+    },
+    "artifact_path": null,
+    "eligibility": "ELIGIBLE",
+    "limitations": [],
+    "provenance": {},
+    "code_version": null
+  },
+  "poor_model": {
+    "model_id": "poor_model",
+    "task": "production_forecast",
+    "version": "1.0",
+    "status": "CANDIDATE",
+    "dataset_id": "test_dataset",
+    "dataset_version": "1.0",
+    "feature_schema": {
+      "spm": "float"
+    },
+    "hyperparameters": {},
+    "training_timestamp": "2026-09-29T17:30:28.131816+00:00",
+    "metrics": {
+      "mae": 10.0
+    },
+    "validation_metrics": {
+      "mae": 10.0
+    },
+    "test_metrics": {
+      "mae": 10.0
+    },
+    "artifact_path": null,
+    "eligibility": "ELIGIBLE",
+    "limitations": [
+      "insufficient data"
+    ],
+    "provenance": {},
+    "code_version": null
+  },
+  "unavailable_model": {
+    "model_id": "unavailable_model",
+    "task": "failure_risk",
+    "version": "1.0",
+    "status": "UNAVAILABLE",
+    "dataset_id": "test_dataset",
+    "dataset_version": "1.0",
+    "feature_schema": {},
+    "hyperparameters": {},
+    "training_timestamp": "2026-09-29T17:30:28.142323+00:00",
+    "metrics": {},
+    "validation_metrics": {},
+    "test_metrics": {},
+    "artifact_path": null,
+    "eligibility": "INSUFFICIENT_DATA",
+    "limitations": [
+      "no labeled failure data",
+      "No labeled data available"
+    ],
+    "provenance": {},
+    "code_version": null
+  }
+}

@@ -11,11 +11,36 @@ export interface DataSummary {
 
 export interface WellSummary {
   well_id: string;
-  last_update: string;
-  css_phase: string;
-  oil_rate_bopd: number;
-  spm: number;
-  stroke_in: number;
+  last_update: string | null;
+  css_phase: string | null;
+  oil_rate_bopd: number | null;
+  spm: number | null;
+  stroke_in: number | null;
+  provenance: string;
+  data_status: string;
+}
+
+export interface PublicWellDetail {
+  well_id: string;
+  data_status: string;
+  provenance: string;
+  field: string | null;
+  reservoir: string | null;
+  status: string | null;
+  status_as_of: string | null;
+  status_as_of_kind?: string | null;
+  temporal_note?: string | null;
+  source_publication_date?: string | null;
+  date_precision?: string | null;
+  lift_method: string | null;
+  css_status: string | null;
+  css_cycle_count: number | null;
+  css: Array<Record<string, unknown>>;
+  production: Array<Record<string, unknown>>;
+  telemetry: null;
+  source_id: string | null;
+  confidence: string | null;
+  notes: string | null;
 }
 
 export interface WellsResponse {
@@ -425,3 +450,220 @@ export interface SceneSelection {
 }
 
 export type CameraPreset = "FIELD" | "WELL" | "WELLBORE" | "RESERVOIR" | "PUMP";
+
+/* Priority 2: Historical time-series types */
+export interface HistoricalObservation {
+  record_id: string;
+  timestamp_start: string;
+  timestamp_end: string | null;
+  timestamp_precision: string;
+  original_period: string;
+  approximate: boolean;
+  well_id: string | null;
+  scope: string;
+  variable: string;
+  value: number | null;
+  value_str: string | null;
+  reported_min: number | null;
+  reported_max: number | null;
+  unit: string;
+  value_kind: string;
+  derivation: string | null;
+  derived_from: string | null;
+  source_id: string;
+  provenance: string;
+  data_status: string;
+  source_publication_date: string | null;
+  time_series_safe: boolean;
+  ml_safe: boolean;
+  data_quality: string;
+  notes: string;
+}
+
+export interface HistoryCoverage {
+  observation_count: number;
+  temporal_coverage: string;
+  has_gaps: boolean;
+  duplicate_count: number;
+  provenance_classes: string[];
+  measured_count: number;
+  derived_count: number;
+  synthetic_count: number;
+  insufficient_count: number;
+  time_series_safe_count: number;
+  ml_safe_count: number;
+  precision_breakdown: Record<string, number>;
+}
+
+export interface WellCoverageSummary {
+  well_id: string;
+  coverage: HistoryCoverage;
+  variables: Record<string, number>;
+  time_series_ready: boolean;
+  ml_ready: boolean;
+}
+
+export interface HistoryResponse {
+  query: Record<string, unknown>;
+  count: number;
+  observations: HistoricalObservation[];
+  coverage: HistoryCoverage;
+  metadata: {
+    include_derived: boolean;
+    include_synthetic: boolean;
+    include_live: boolean;
+  };
+}
+
+export interface TrendAnalysis {
+  status: "INSUFFICIENT" | "TREND_AVAILABLE";
+  reason?: string;
+  observation_count: number;
+  numeric_count?: number;
+  temporal_precision?: Set<string>;
+  first_value?: number;
+  last_value?: number;
+  change?: number;
+  change_percent?: number | null;
+  direction?: string;
+  min_value?: number;
+  max_value?: number;
+  mean_value?: number;
+}
+
+/* Priority 3: ML Intelligence Engine types */
+export interface MLStatus {
+  status: "OPERATIONAL" | "UNAVAILABLE";
+  version: string;
+  available_models: Record<string, MLModelInfo>;
+  registry_summary: {
+    total_models: number;
+    by_status: Record<string, number>;
+    by_task: Record<string, number>;
+    by_eligibility: Record<string, number>;
+  };
+  datasets: number;
+  timestamp: string;
+  reason?: string;
+}
+
+export interface MLModelInfo {
+  available: boolean;
+  model_id: string | null;
+  model_version: string | null;
+  status: string;
+  eligibility: string;
+  limitations: string[];
+}
+
+export interface MLForecastRequest {
+  well_id: string;
+  horizon_days?: number;
+  features?: Record<string, unknown>;
+  model_id?: string;
+  model_version?: string;
+}
+
+export interface MLForecastResult {
+  well_id: string;
+  forecast_horizon_days: number;
+  forecasted_values: number[];
+  forecast_timestamps: string[];
+  baseline_values?: number[];
+  metrics: Record<string, number>;
+  confidence_intervals?: Array<{ lower: number; upper: number }>;
+  trend_direction?: string;
+  data_quality: string;
+  model_id: string;
+  model_version: string;
+  limitations: string[];
+  insufficient_data: boolean;
+  insufficient_reason?: string;
+}
+
+export interface MLAnomalyRequest {
+  variable: string;
+  value: number;
+  well_id?: string;
+  timestamp?: string;
+  historical_window?: number;
+  model_id?: string;
+  model_version?: string;
+}
+
+export interface MLAnomalyResult {
+  variable: string;
+  observed_value: number;
+  expected_value?: number;
+  reference_value?: number;
+  anomaly_score: number;
+  status: "NORMAL" | "WARNING" | "ANOMALY" | "INSUFFICIENT_CONTEXT";
+  method: string;
+  threshold: number;
+  timestamp: string;
+  well_id?: string;
+  provenance: string;
+  explanation: string;
+  data_quality: string;
+  model_id: string;
+  model_version: string;
+  limitations: string[];
+  insufficient_data: boolean;
+  insufficient_reason?: string;
+}
+
+export interface MLHealthRequest {
+  well_id: string;
+  features?: Record<string, unknown>;
+  model_id?: string;
+  model_version?: string;
+}
+
+export interface MLHealthResult {
+  well_id: string;
+  health_status: "HEALTHY" | "DEGRADED" | "AT_RISK" | "INSUFFICIENT_DATA";
+  health_score: number;
+  contributing_factors: Array<{
+    factor: string;
+    value: number;
+    status: string;
+    contribution: number;
+  }>;
+  spm_status?: string;
+  stroke_status?: string;
+  load_status?: string;
+  fillage_status?: string;
+  data_quality: string;
+  model_id: string;
+  model_version: string;
+  limitations: string[];
+  insufficient_data: boolean;
+  insufficient_reason?: string;
+}
+
+export interface MLFailureRequest {
+  well_id: string;
+  features?: Record<string, unknown>;
+  model_id?: string;
+  model_version?: string;
+}
+
+export interface MLFailureResult {
+  well_id: string;
+  failure_probability: number | null;
+  risk_level?: string;
+  failure_class?: string;
+  time_to_failure_days?: number;
+  contributing_factors: Array<{
+    factor: string;
+    value: number;
+    contribution: number;
+  }>;
+  confidence: number | null;
+  data_quality: string;
+  model_id: string;
+  model_version: string;
+  limitations: string[];
+  insufficient_data: boolean;
+  insufficient_reason?: string;
+}

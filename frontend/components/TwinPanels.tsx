@@ -373,7 +373,7 @@ export function SrpPanel({ wellId, refreshKey }: { wellId: string; refreshKey: n
 /* ======================= ANALYTICS ======================= */
 
 export function AnalyticsPanel({ wellId, refreshKey }: { wellId: string; refreshKey: number }) {
-  const { data: hist, error: hErr } = useFetch(() => api.history(wellId, 240), [wellId, refreshKey]);
+  const { data: hist, error: hErr } = useFetch(() => api.wellHistory(wellId, 240), [wellId, refreshKey]);
   const { data: an, error: aErr } = useFetch<AnalyticsResponse>(() => api.analytics(wellId), [wellId, refreshKey]);
   if (hErr || aErr) return <ErrorLine error={(hErr || aErr)!} />;
   if (!hist || !an) return <Loading what="history + analytics" />;
@@ -493,7 +493,7 @@ export function AnalyticsPanel({ wellId, refreshKey }: { wellId: string; refresh
 
 export function MlPanel({ wellId, refreshKey }: { wellId: string; refreshKey: number }) {
   const { data: pred, error } = useFetch<PredictResponse>(() => api.predict(wellId), [wellId, refreshKey]);
-  const { data: hist } = useFetch(() => api.history(wellId, 240), [wellId, refreshKey]);
+  const { data: hist } = useFetch(() => api.wellHistory(wellId, 240), [wellId, refreshKey]);
   if (error) return <ErrorLine error={error} />;
   if (!pred) return <Loading what="failure models" />;
   const pts = (hist?.points ?? []).filter((p) => p.css_phase === "PRODUCTION");

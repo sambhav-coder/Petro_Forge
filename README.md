@@ -14,7 +14,7 @@ oil wells of Baghewala Field (Oil India Limited).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
-[![Pytest](https://img.shields.io/badge/Tests-56_passed-brightgreen.svg)](./project)
+[![Pytest](https://img.shields.io/badge/Tests-103_passed-brightgreen.svg)](./project)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
 [![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
@@ -213,9 +213,9 @@ project/
 |---|---|---|
 | `GET` | `/` | Health + SIH26120 metadata |
 | `POST` | `/api/v1/telemetry/ingest` | Validate + store well telemetry, attach twin summary (201) |
-| `GET` | `/api/v1/wells` | Well summaries sorted by `well_id` |
-| `GET` | `/api/v1/wells/{well_id}` | Latest well telemetry (404 when unknown) |
-| `GET` | `/api/v1/wells/{well_id}/twin` | Deterministic engineering snapshot |
+| `GET` | `/api/v1/wells` | Merged list: telemetry + 5 publicly verified well records (bootstrap) |
+| `GET` | `/api/v1/wells/{well_id}` | Telemetry, or public-record envelope (`telemetry: null`) |
+| `GET` | `/api/v1/wells/{well_id}/twin` | Snapshot; `INSUFFICIENT_PUBLIC_TELEMETRY` for public-only wells |
 | `POST` | `/api/v1/wells/{well_id}/simulate` | Side-effect-free what-if + deltas |
 | `POST` | `/api/v1/wells/{well_id}/optimize` | Joint grid search: recommended + top-5 + reasons |
 | `GET` | `/api/v1/wells/{well_id}/cycle` | CSS cycle series + optimal cut-off + cycle SOR |
@@ -236,14 +236,15 @@ project/
 
 ## 12. 🧪 Testing & Validation
 
-**111/111 tests passing** (`pytest -q`): 19 telemetry/API regression + 21 physics
+**238/238 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
-(catalog, schema, units, cleaning, physical validation, provenance, synthetic
-determinism, physics reuse, pipeline, repository, data API, telemetry compat,
-path safety) + 26 Block 4 tests (`test_block4.py`: water cut, production cooling,
-VFD, dynacard, cycle cut-off optimality, planner, calibration incl. fault robustness,
-anomalies, decline fit, ML vs oracle AUC, simulator determinism, alerts latching,
-live tick, SSE stream, ingest contract). Additionally validated live: 38/38 end-to-end
++ 18 public-recovery tests (registry, bootstrap, provenance separation, compat)
++ Priority 1-3 hardening, historical-engine and ML-intelligence suites
++ 26 Block 4 tests (`test_block4.py`: water cut, production cooling, VFD, dynacard,
+cycle cut-off optimality, planner, calibration incl. fault robustness, anomalies,
+decline fit, ML vs oracle AUC, simulator determinism, alerts latching, live tick,
+SSE stream, ingest contract, synthetic IDs never reuse public well IDs).
+Additionally validated live: 38/38 end-to-end
 checks (full journey, physics directionals A–H, risk reproducibility, 243-grid,
 404/422 handling) and 9/9 dashboard contract checks.
 
@@ -263,7 +264,7 @@ python app.py
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
 - 3D twin dashboard: `cd frontend && npm install && npm run dev`, open http://localhost:3000/twin,
   click **Load synthetic field**, then **GO LIVE** (backend must be running on :8000)
-- Tests: `pytest -q` in `project/` (expect 111 passed)
+- Tests: `pytest -q` in `project/` (expect 238 passed)
 - Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
 
 ## 14. 🐳 Docker
@@ -282,7 +283,15 @@ docker-compose up --build
 ## 15. 📐 Prototype Assumptions & Limitations
 
 - Deterministic prototype-level model, **not calibrated** against Baghewala measurements
-- No Baghewala field data, SCADA feed, or validated results are claimed or included
+- Public Baghewala data: field-level context + 5 publicly verified well records
+  (historical/status/CSS/sparse production evidence); **no verified complete
+  continuous well-by-well SCADA telemetry was found** (no per-well continuous
+  SPM/VFD/pressure/temperature streams; no complete well census, CSS parameter
+  history, SRP telemetry, or continuous production streams)
+- Synthetic data is for demos/pipeline testing only — NOT measured Baghewala
+  data, calibration data, or evidence of actual well behavior
+- Derived values (e.g. BGW-08 85 BOPD midpoint of reported 80–90 BOPD) are
+  labeled DERIVED, never raw measurements
 - SOR is a prototype t/bbl convention (steam tonnes / oil barrels over 30 days)
 - Energy coefficients, objective weights (0.40/0.25/0.15/0.20), fillage/efficiency
   (0.85/0.75), risk bands are fixed prototype assumptions
