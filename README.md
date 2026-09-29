@@ -14,7 +14,7 @@ oil wells of Baghewala Field (Oil India Limited).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
-[![Pytest](https://img.shields.io/badge/Tests-56_passed-brightgreen.svg)](./project)
+[![Pytest](https://img.shields.io/badge/Tests-103_passed-brightgreen.svg)](./project)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
 [![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
@@ -188,9 +188,9 @@ project/
 |---|---|---|
 | `GET` | `/` | Health + SIH26120 metadata |
 | `POST` | `/api/v1/telemetry/ingest` | Validate + store well telemetry, attach twin summary (201) |
-| `GET` | `/api/v1/wells` | Well summaries sorted by `well_id` |
-| `GET` | `/api/v1/wells/{well_id}` | Latest well telemetry (404 when unknown) |
-| `GET` | `/api/v1/wells/{well_id}/twin` | Deterministic engineering snapshot |
+| `GET` | `/api/v1/wells` | Merged list: telemetry + 5 verified public Baghewala wells (bootstrap) |
+| `GET` | `/api/v1/wells/{well_id}` | Telemetry, or public-record envelope (`telemetry: null`) |
+| `GET` | `/api/v1/wells/{well_id}/twin` | Snapshot; `INSUFFICIENT_PUBLIC_TELEMETRY` for public-only wells |
 | `POST` | `/api/v1/wells/{well_id}/simulate` | Side-effect-free what-if + deltas |
 | `POST` | `/api/v1/wells/{well_id}/optimize` | Joint grid search: recommended + top-5 + reasons |
 | `GET` | `/api/v1/audit/logs` | SHA-256 audit records |
@@ -199,11 +199,10 @@ project/
 
 ## 12. 🧪 Testing & Validation
 
-**85/85 tests passing** (`pytest -q`): 19 telemetry/API regression + 21 physics
+**103/103 tests passing** (`pytest -q`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
-(catalog, schema, units, cleaning, physical validation, provenance, synthetic
-determinism, physics reuse, pipeline, repository, data API, telemetry compat,
-path safety). Additionally validated live: 38/38 end-to-end
++ 18 public-recovery tests (registry, bootstrap, provenance separation, compat).
+Additionally validated live: 38/38 end-to-end
 checks (full journey, physics directionals A–H, risk reproducibility, 243-grid,
 404/422 handling) and 9/9 dashboard contract checks.
 

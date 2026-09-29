@@ -190,9 +190,14 @@ def test_list_wells():
     response = client.get("/api/v1/wells")
     assert response.status_code == 200
     data = response.json()
-    assert data["total_wells"] == 2
+    assert data["total_wells"] == len({"BGW-01", "BGW-02"} | set(app_module.PUBLIC_WELLS))
     by_id = {w["well_id"]: w for w in data["wells"]}
     assert by_id["BGW-01"]["oil_rate_bopd"] == 20.0
+    assert by_id["BGW-01"]["data_status"] == "LIVE_TELEMETRY"  # telemetry supersedes public
+    # Public registry wells are present with null telemetry (never fabricated).
+    assert by_id["BGW-08"]["data_status"] == "PUBLIC_FIELD_RECORD"
+    assert by_id["BGW-08"]["provenance"] == "BAGHEWALA_FIELD"
+    assert by_id["BGW-08"]["oil_rate_bopd"] is None
     assert by_id["BGW-02"]["spm"] == 5.0
     assert by_id["BGW-02"]["stroke_in"] == 96.0
     assert by_id["BGW-01"]["css_phase"] == "PRODUCTION"

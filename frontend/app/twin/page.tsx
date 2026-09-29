@@ -8,6 +8,7 @@ import type {
   DataSummary,
   IsolatableKind,
   OptimizeResponse,
+  PublicWellDetail,
   SceneSelection,
   TwinSnapshot,
   ViewMode,
@@ -23,6 +24,7 @@ export default function Home() {
   const [wells, setWells] = useState<WellsResponse | null>(null);
   const [twins, setTwins] = useState<Record<string, TwinSnapshot>>({});
   const [telemetries, setTelemetries] = useState<Record<string, WellTelemetry>>({});
+  const [publicDetails, setPublicDetails] = useState<Record<string, PublicWellDetail>>({});
   const [opts, setOpts] = useState<Record<string, OptimizeResponse>>({});
   const [selectedWellId, setSelectedWellId] = useState<string | null>(null);
   const [selection, setSelection] = useState<SceneSelection | null>(null);
@@ -37,9 +39,21 @@ export default function Home() {
   const [dataSummary, setDataSummary] = useState<DataSummary | null>(null);
 
   const loadWell = useCallback(async (id: string) => {
-    const [w, t] = await Promise.all([api.well(id), api.twin(id)]);
-    setTelemetries((p) => ({ ...p, [id]: w }));
-    setTwins((p) => ({ ...p, [id]: t }));
+    // Public records have no telemetry: twin fetch 404s with
+    // INSUFFICIENT_PUBLIC_TELEMETRY — tolerated, twin stays null.
+    const w = await api.well(id);
+    if ((w as unknown as PublicWellDetail).data_status === "PUBLIC_FIELD_RECORD") {
+      setPublicDetails((p) => ({ ...p, [id]: w as unknown as PublicWellDetail }));
+      setTwins((p) => {
+        const c = { ...p };
+        delete c[id];
+        return c;
+      });
+      return { w: null, t: null };
+    }
+    const t = await api.twin(id).catch(() => null);
+    setTelemetries((p) => ({ ...p, [id]: w as WellTelemetry }));
+    if (t) setTwins((p) => ({ ...p, [id]: t }));
     return { w, t };
   }, []);
 
@@ -59,14 +73,21 @@ export default function Home() {
             : wl.wells[0].well_id;
         setSelectedWellId(id);
         // Twin state for every known well drives per-well thermal glow.
+        // Public records carry no telemetry: stored separately, twin 404 tolerated.
         await Promise.all(
           wl.wells.map(async (w) => {
             try {
-              const t = await api.twin(w.well_id);
-              setTwins((p) => ({ ...p, [w.well_id]: t }));
-              if (w.well_id === id) {
-                const full = await api.well(w.well_id);
-                setTelemetries((p) => ({ ...p, [w.well_id]: full }));
+              const detail = await api.well(w.well_id);
+              if ((detail as unknown as PublicWellDetail).data_status === "PUBLIC_FIELD_RECORD") {
+                setPublicDetails((p) => ({ ...p, [w.well_id]: detail as unknown as PublicWellDetail }));
+                return;
+              }
+              setTelemetries((p) => ({ ...p, [w.well_id]: detail as WellTelemetry }));
+              try {
+                const t = await api.twin(w.well_id);
+                setTwins((p) => ({ ...p, [w.well_id]: t }));
+              } catch {
+                /* public/no-telemetry wells simply have no twin snapshot */
               }
             } catch {
               /* per-well failure must not break the field view */
@@ -173,7 +194,8 @@ export default function Home() {
         >
           {(wells?.wells ?? []).map((w) => (
             <option key={w.well_id} value={w.well_id}>
-              {w.well_id} · {w.css_phase}
+              {w.well_id} · {w.css_phase ?? w.data_status}
+              {w.data_status === "PUBLIC_FIELD_RECORD" ? " (public)" : ""}
             </option>
           ))}
           {(!wells || wells.wells.length === 0) && <option value="">— no wells —</option>}
@@ -223,16 +245,19 @@ export default function Home() {
                 <div className="glass rounded-2xl p-8 text-center space-y-3 max-w-md">
                   <div className="font-bold">No well telemetry available.</div>
                   <p className="text-xs text-slate-400">
-                    Ingest a well via the API, or load the BGW-DEMO baseline through the
-                    real ingest endpoint.
+                    Ingest a well via the API, or load optional synthetic demo
+                    telemetry through the real ingest endpoint.
                   </p>
                   <button
                     onClick={seedDemo}
                     disabled={seeding || connected === false}
                     className="px-4 py-2 rounded-lg bg-gradient-to-r from-forest-700 to-leaf text-white text-xs font-bold disabled:opacity-40"
                   >
-                    {seeding ? "Loading…" : "Load BGW-DEMO baseline"}
+                    {seeding ? "Loading…" : "Load Synthetic Demo Telemetry"}
                   </button>
+                  <p className="text-[10px] font-mono text-slate-500">
+                    Synthetic demo state — clearly labeled, never real field data.
+                  </p>
                 </div>
               </div>
             )
@@ -255,6 +280,7 @@ export default function Home() {
             wellId={selectedWellId}
             telemetry={telemetry}
             twin={twin}
+            publicDetail={selectedWellId ? (publicDetails[selectedWellId] ?? null) : null}
             opt={selectedWellId ? (opts[selectedWellId] ?? null) : null}
             optLoading={optLoading}
             onRunOptimize={runOptimize}

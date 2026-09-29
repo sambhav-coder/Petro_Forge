@@ -26,9 +26,16 @@ model (VALID/WARNING/INVALID/MISSING/DUPLICATE) → hard-physics reject vs soft
 Baghewala-plausible warn → dedupe → `twin_physics`-derived features → store
 (in-memory runtime, JSONL files for offline use).
 
-Honest status: granular public Baghewala telemetry **was not found**; field
-evidence is aggregate-level. Granular records are `SYNTHETIC_BAGHEWALA` only
-(seeded generator v`synthetic_baghewala/1.0`, seed 42); public datasets are
+Honest status: public Baghewala data includes field-level information and a
+subset of well-specific historical/status/CSS/production records (**5 verified
+wells**: BGW-01, BGW-04, BGW-08, BGW-17, BGW-40 — see
+`data_catalog/baghewala_well_coverage.json`). Complete continuous well-by-well
+SCADA telemetry was not found publicly. These 5 wells **bootstrap automatically
+on startup** (`data/bootstrap.py`), so the twin never opens empty; ingested
+telemetry supersedes (never overwrites) public records, and the twin endpoint
+returns `INSUFFICIENT_PUBLIC_TELEMETRY` for public-only wells instead of fake
+snapshots. Granular demo records remain `SYNTHETIC_BAGHEWALA` only (seeded
+generator v`synthetic_baghewala/1.0`, seed 42); public datasets are
 `PUBLIC_REFERENCE` (methods only, raw files never committed). Full docs:
 `data_catalog/README.md`. New endpoints: `GET /api/v1/data/sources|catalog|
 quality|summary`, `POST /api/v1/data/ingest` (JSON body, capped, no uploads).
@@ -39,8 +46,8 @@ quality|summary`, `POST /api/v1/data/ingest` (JSON body, capped, no uploads).
 |---|---|
 | `GET /` | Health + problem metadata |
 | `POST /api/v1/telemetry/ingest` | Validate + store well telemetry, attach twin summary |
-| `GET /api/v1/wells` / `GET /api/v1/wells/{id}` | List wells / latest well state |
-| `GET /api/v1/wells/{id}/twin` | Deterministic engineering snapshot |
+| `GET /api/v1/wells` / `GET /api/v1/wells/{id}` | Merged well list (telemetry + verified public wells) / telemetry or public-record envelope |
+| `GET /api/v1/wells/{id}/twin` | Deterministic snapshot; `INSUFFICIENT_PUBLIC_TELEMETRY` for public-only wells |
 | `POST /api/v1/wells/{id}/simulate` | Side-effect-free what-if (current vs scenario + deltas) |
 | `POST /api/v1/wells/{id}/optimize` | Joint CSS × SRP grid search (recommended + top-5 + reasons) |
 | `GET /api/v1/audit/logs` | SHA-256 audit records |

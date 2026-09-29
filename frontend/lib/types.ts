@@ -11,11 +11,32 @@ export interface DataSummary {
 
 export interface WellSummary {
   well_id: string;
-  last_update: string;
-  css_phase: string;
-  oil_rate_bopd: number;
-  spm: number;
-  stroke_in: number;
+  last_update: string | null;
+  css_phase: string | null;
+  oil_rate_bopd: number | null;
+  spm: number | null;
+  stroke_in: number | null;
+  provenance: string;
+  data_status: string;
+}
+
+export interface PublicWellDetail {
+  well_id: string;
+  data_status: string;
+  provenance: string;
+  field: string | null;
+  reservoir: string | null;
+  status: string | null;
+  status_as_of: string | null;
+  lift_method: string | null;
+  css_status: string | null;
+  css_cycle_count: number | null;
+  css: Array<Record<string, unknown>>;
+  production: Array<Record<string, unknown>>;
+  telemetry: null;
+  source_id: string | null;
+  confidence: string | null;
+  notes: string | null;
 }
 
 export interface WellsResponse {

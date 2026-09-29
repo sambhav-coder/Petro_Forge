@@ -1,18 +1,28 @@
 # PetroForge Data Foundation
 
-> Honest summary: **Public Baghewala-specific field evidence is used where
-> available. Granular operational telemetry that is not publicly available is
-> represented only through explicitly labeled synthetic data.**
+> Honest summary: **Public Baghewala data includes field-level information and
+> a subset of well-specific historical/status/CSS/production records
+> (5 verified wells). Complete continuous well-by-well SCADA telemetry was not
+> found publicly. Granular operational telemetry that is not publicly available
+> is represented only through explicitly labeled synthetic data.**
 
 ## 1. What data is available
 
 - **Baghewala aggregates** (rates, well counts, geology, equipment) from OIL,
-  press reports of officials, government records, one peer-reviewed geology paper.
+  press reports of officials, government records, peer-reviewed geology papers.
+- **Verified Baghewala well records (5 wells)**: BGW-01 (discovery, 1991-94
+  tests), BGW-04 (1991-94 tests), BGW-08 (first CSS Dec 2018, 80-90 bopd
+  post-pilot), BGW-17 (2022 injection completion), BGW-40 (fishbones) —
+  see `baghewala_well_coverage.json`. Status/CSS/production only; **no
+  continuous telemetry** (all `telemetry_data: false`).
 - **Public reference datasets/papers** (Mendeley SRP failure data, Volve open
   field data, dynamometer-card literature) for *methods*, never for Baghewala facts.
 - **Synthetic Baghewala-constrained telemetry** generated on demand
   (`project.data.synthetic`, seed 42) — every record labeled `SYNTHETIC_BAGHEWALA`.
 - **Derived features** computed by reusing `twin_physics` (labeled `DERIVED_PROTOTYPE`).
+- **Bootstrap**: `project/data/public/*.json` load at startup into the
+  well list, so the twin never opens empty. Telemetry ingests supersede
+  (never overwrite) public records.
 
 ## 2. Baghewala-specific public data found
 
@@ -25,10 +35,11 @@ reporting years, 25 MT in-place / 53 MT bitumen (historical). Conflicts
 
 ## 3. What was NOT found
 
-**Complete public Baghewala telemetry with well-level time-series variables
-(timestamp, pressures, temperatures, steam, soak, CSS phase, oil rate, SPM,
-stroke, VFD, failures) was not found.** No public source provides it. This is
-documented as fact, not failure.
+**Complete continuous well-by-well SCADA telemetry was not found publicly.**
+No public source provides timestamped pressure/temperature/steam/SPM/stroke/VFD
+streams. Per-well coverage (`baghewala_well_coverage.json`) is explicit:
+2 CSS records, 1 well-specific production record, 0 telemetry streams.
+This is documented as fact, not failure.
 
 ## 4. Public reference datasets
 

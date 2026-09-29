@@ -40,6 +40,7 @@ import twin_physics
 import twin_optimize
 
 from data import DATA_SCHEMA_VERSION, SYNTHETIC_GENERATOR_VERSION
+from data.bootstrap import bootstrap_public_data
 from data.pipeline import ingest_telemetry_batch
 from data.provenance import ProvenanceClass
 from data.repository import InMemoryRepository
@@ -270,11 +271,13 @@ OptimizeResponse.model_rebuild()
 
 class WellSummary(BaseModel):
     well_id: str
-    last_update: str
-    css_phase: CSSPhase
-    oil_rate_bopd: float
-    spm: float
-    stroke_in: float
+    last_update: Optional[str] = None
+    css_phase: Optional[str] = None
+    oil_rate_bopd: Optional[float] = None
+    spm: Optional[float] = None
+    stroke_in: Optional[float] = None
+    provenance: str = "UNKNOWN"
+    data_status: str = "LIVE_TELEMETRY"
 
 
 class DispatchRequest(BaseModel):
@@ -326,13 +329,54 @@ def _telemetry_hash(well_id: str, event_id: str, timestamp: str, state: Dict) ->
 
 
 def _well_summary(well_id: str, record: WellTelemetry) -> Dict:
+    phase = record.css_phase.value if hasattr(record.css_phase, "value") else str(record.css_phase)
     return {
         "well_id": well_id,
         "last_update": record.timestamp,
-        "css_phase": record.css_phase,
+        "css_phase": phase,
         "oil_rate_bopd": record.oil_rate_bopd,
         "spm": record.spm,
         "stroke_in": record.stroke_in,
+        "provenance": "UNKNOWN",
+        "data_status": "LIVE_TELEMETRY",
+    }
+
+
+def _public_summary(pub: Dict[str, Any]) -> Dict:
+    """List entry for a verified public well: NO telemetry fabricated."""
+    return {
+        "well_id": pub["well_id"],
+        "last_update": None,
+        "css_phase": None,
+        "oil_rate_bopd": None,
+        "spm": None,
+        "stroke_in": None,
+        "provenance": pub.get("provenance", "BAGHEWALA_FIELD"),
+        "data_status": "PUBLIC_FIELD_RECORD",
+    }
+
+
+def _public_detail(well_id: str, pub: Dict[str, Any]) -> Dict:
+    """Public-record envelope: historical/status data, telemetry null."""
+    css = [c for c in PUBLIC_CSS if c.get("well_id") == well_id]
+    prod = [p for p in PUBLIC_PROD_WELL if p.get("well_id") == well_id]
+    return {
+        "well_id": well_id,
+        "data_status": "PUBLIC_FIELD_RECORD",
+        "provenance": pub.get("provenance", "BAGHEWALA_FIELD"),
+        "field": pub.get("field"),
+        "reservoir": pub.get("reservoir"),
+        "status": pub.get("status"),
+        "status_as_of": pub.get("status_as_of"),
+        "lift_method": pub.get("lift_method"),
+        "css_status": pub.get("css_status"),
+        "css_cycle_count": pub.get("css_cycle_count"),
+        "css": css,
+        "production": prod,
+        "telemetry": None,
+        "source_id": pub.get("source_id"),
+        "confidence": pub.get("confidence"),
+        "notes": pub.get("notes"),
     }
 
 
@@ -448,23 +492,48 @@ async def ingest_telemetry(payload: WellTelemetry):
     )
 
 
+# ---------------- Priority 1 recovery: public Baghewala bootstrap ----------------
+# Verified public registry loads at startup so the twin never opens empty.
+# Telemetry wells (WELL_STORE) take precedence in merged views; public
+# records are never upgraded into telemetry.
+_PUBLIC_BOOT = bootstrap_public_data()
+PUBLIC_WELLS: Dict[str, Dict[str, Any]] = _PUBLIC_BOOT["wells"]
+PUBLIC_CSS: List[Dict[str, Any]] = _PUBLIC_BOOT["css"]
+PUBLIC_PROD_WELL: List[Dict[str, Any]] = _PUBLIC_BOOT["production_well"]
+PUBLIC_PROD_FIELD: List[Dict[str, Any]] = _PUBLIC_BOOT["production_field"]
+PUBLIC_FIELD: Dict[str, Any] = _PUBLIC_BOOT["field"]
+BOOTSTRAP_REPORT: Dict[str, Any] = _PUBLIC_BOOT["report"]
+
+
 @app.get("/api/v1/wells", tags=["Wells"])
 async def list_wells():
-    """Lightweight summaries of all wells with ingested telemetry, sorted by well_id."""
-    wells = [_well_summary(well_id, record) for well_id, record in sorted(WELL_STORE.items())]
+    """Merged well list: live telemetry wells + verified public Baghewala wells.
+
+    Public entries carry null telemetry fields (never fabricated) and
+    provenance BAGHEWALA_FIELD / data_status PUBLIC_FIELD_RECORD.
+    """
+    wells = [_well_summary(wid, rec) for wid, rec in sorted(WELL_STORE.items())]
+    seen = set(WELL_STORE.keys())
+    for wid in sorted(PUBLIC_WELLS.keys()):
+        if wid not in seen:
+            wells.append(_public_summary(PUBLIC_WELLS[wid]))
     return {"total_wells": len(wells), "wells": wells}
 
 
 @app.get("/api/v1/wells/{well_id}", tags=["Wells"])
 async def get_well(well_id: str):
-    """Latest accepted telemetry record for one well. 404 when unknown."""
+    """Latest telemetry for ingested wells; public-record envelope for
+    verified Baghewala wells without telemetry. 404 when unknown."""
     record = WELL_STORE.get(well_id)
-    if record is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
-        )
-    return record
+    if record is not None:
+        return record
+    pub = PUBLIC_WELLS.get(well_id)
+    if pub is not None:
+        return _public_detail(well_id, pub)
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
+    )
 
 
 @app.get("/api/v1/wells/{well_id}/twin", response_model=TwinSnapshotResponse, tags=["Digital Twin"])
@@ -472,6 +541,21 @@ async def get_well_twin(well_id: str):
     """Deterministic engineering snapshot for the well's latest state."""
     record = WELL_STORE.get(well_id)
     if record is None:
+        if well_id in PUBLIC_WELLS:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "INSUFFICIENT_PUBLIC_TELEMETRY",
+                    "message": (
+                        f"Well '{well_id}' is a verified public record "
+                        "(PUBLIC_FIELD_RECORD) with no live telemetry: twin "
+                        "snapshot unavailable. Load synthetic demo telemetry "
+                        "to exercise the physics engine."
+                    ),
+                    "twin_data_status": "INSUFFICIENT_PUBLIC_TELEMETRY",
+                    "provenance": "BAGHEWALA_FIELD",
+                },
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
@@ -638,18 +722,34 @@ async def data_quality():
 
 @app.get("/api/v1/data/summary", tags=["Data Foundation"])
 async def data_summary():
-    """Store counts + provenance breakdown of canonical telemetry."""
+    """Store counts + provenance breakdown + public-registry status.
+
+    Historical public records are reported as records, never as telemetry.
+    """
     by_provenance: Dict[str, int] = {}
     for r in DATA_REPO.get_telemetry():
         key = str(r.provenance.value if hasattr(r.provenance, "value") else r.provenance)
         by_provenance[key] = by_provenance.get(key, 0) + 1
     sources = _load_catalog_json("data_sources.json")
+    telemetry_ids = set(WELL_STORE.keys())
     return {
         "schema_version": DATA_SCHEMA_VERSION,
         "synthetic_generator_version": SYNTHETIC_GENERATOR_VERSION,
         "store": DATA_REPO.counts(),
         "by_provenance": by_provenance,
         "cataloged_sources": len(sources.get("sources", [])) if isinstance(sources, dict) else 0,
+        "public_registry": {
+            "public_wells": len(PUBLIC_WELLS),
+            "public_css_records": len(PUBLIC_CSS),
+            "public_production_records": len(PUBLIC_PROD_WELL) + len(PUBLIC_PROD_FIELD),
+            "rejected_records": BOOTSTRAP_REPORT.get("rejected_records", 0),
+        },
+        "data_status": {
+            "public_field_records": len(PUBLIC_WELLS),
+            "public_telemetry_records": 0,
+            "synthetic_records": 0,
+            "live_telemetry_wells": len(telemetry_ids),
+        },
     }
 
 

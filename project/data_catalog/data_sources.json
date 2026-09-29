@@ -1,1 +1,481 @@
-{"description": "Researched source registry for PetroForge Priority 1. Metadata and citations only -- no copyrighted documents, no proprietary raw data. See README.md in this folder.", "sources": [{"confidence": "high", "geography": "Baghewala Field, Jaisalmer, Rajasthan, India", "license": "All rights reserved (official site); metadata only, do not copy content", "notes": "Primary field evidence: Jodhpur Sandstone avg depth 1150 m; production since 2017; 35 wells drilled, 23 producing; SRP (conventional + hydraulic); thermal wellhead + VIT; field rate above 600 bbl/day; Baghewala PML 200 sq km.", "provenance_class": "BAGHEWALA_FIELD", "publisher": "Oil India Limited (official)", "redistribution": false, "source_id": "oilindia_rajasthan_fields", "source_name": "OIL Rajasthan Fields — Baghewala operational summary", "source_type": "official_report", "time_period": "undated page; describes current operations", "url": "https://www.oil-india.com/rajasthan-fields", "variables": ["formation", "avg_depth_m", "lithology_context", "lift_method", "completion_type", "wells_drilled", "wells_producing", "field_rate_bopd", "lease_area_sqkm"]}, {"confidence": "medium-high", "geography": "Baghewala Field, Bikaner-Nagaur sub-basin", "license": "Press copyright; metadata only", "notes": "Record 1202 bpd (+70% vs 705); FY25-26 43773 MT vs 32787 MT; CSS in 19 wells; 13 new wells; fishbone drilling, barefoot completion, electric downhole heaters, hydraulic SRP, high-temp thermal wellheads, diluent injection; discovered 1991; 200.26 sq km; 52 wells, 33 operational; CSS piloted 2018; tankers to ONGC Mehsana, Koyali refinery. CONFLICTS vs OIL page (52/33 vs 35/23; 1202 vs >600 bpd) retained as different reporting years.", "provenance_class": "BAGHEWALA_FIELD", "publication_date": "2026-04-05", "publisher": "The Economic Times (reporting OIL officials)", "redistribution": false, "source_id": "et_rajasthan_record_2026", "source_name": "Oil India ramps up crude production from Rajasthan Thar desert", "source_type": "press_official_statements", "time_period": "FY2024-26", "url": "https://economictimes.indiatimes.com/industry/energy/oil-gas/oil-india-ramps-up-crude-production-from-rajasthans-thar-desert/articleshow/130034667.cms", "variables": ["field_rate_bopd", "annual_production_mt", "wells_total", "wells_operational", "css_well_count", "new_wells", "technologies", "lease_area_sqkm", "logistics"]}, {"confidence": "low", "geography": "Baghewala Field (as summarized)", "license": "Press copyright; metadata only", "notes": "Secondary summary. Steam 300-350 C and cycle-span claims are LOW confidence; used only as loose bounds, never as calibration.", "provenance_class": "BAGHEWALA_FIELD", "publication_date": "2026-04-05", "publisher": "Discovery Alert (secondary press)", "redistribution": false, "source_id": "discoveryalert_baghewala_2026", "source_name": "Oil India crude production Rajasthan transformation summary", "source_type": "press_secondary", "time_period": "FY2024-26", "url": "https://discoveryalert.com.au/oil-india-crude-production-rajasthan-transformation-2026/", "variables": ["steam_temperature_c", "css_phases", "field_rate_bopd"]}, {"confidence": "medium", "geography": "Baghewala PML block, Jaisalmer", "license": "Press copyright; metadata only", "notes": "Expansion scope: 25 wells, 2000 BOPD target, 210 sq km block, Rs 795 cr. Area figure (210) conflicts with 200/200.26 elsewhere; retained as expansion-block scope.", "provenance_class": "BAGHEWALA_FIELD", "publication_date": "2024-01-29", "publisher": "ProjectX India", "redistribution": false, "source_id": "projectx_baghewala_pml", "source_name": "Onshore development drilling in Baghewala PML block", "source_type": "press_project_notice", "time_period": "2024+", "url": "https://projectxindia.com/2024/01/29/onshore-development-drilling-in-baghewala-pml-block/", "variables": ["planned_wells", "target_rate_bopd", "block_area_sqkm", "project_cost"]}, {"confidence": "medium", "geography": "Baghewala area, Rajasthan", "license": "Government open page; metadata only", "notes": "25 MT heavy-oil in place + 53 MT bitumen (PDVSA-era assessment); 2009 trial produced ~64 MT. Historical context, not current rates.", "provenance_class": "BAGHEWALA_FIELD", "publisher": "Directorate of Petroleum, Government of Rajasthan", "redistribution": false, "source_id": "rajasthan_govt_landmark", "source_name": "Rajasthan landmark petroleum development (heavy oil note)", "source_type": "government_record", "time_period": "historical incl. 2009 trial", "url": "https://petroleum.rajasthan.gov.in/landmark-development.htm", "variables": ["oil_in_place_mt", "bitumen_mt", "trial_production_mt"]}, {"confidence": "high", "geography": "Baghewala-1 well, Bikaner-Nagaur basin", "license": "Paywalled journal; metadata/abstract only", "notes": "Heavy sulfur-rich oil, Jodhpur Formation, early-oil-window maturity. Geology context only; no operational telemetry.", "provenance_class": "BAGHEWALA_FIELD", "publication_date": "1995-10", "publisher": "AAPG Bulletin (Peters, Clark, Das Gupta, McCaffrey, Lee)", "redistribution": false, "source_id": "aapg_baghewala1_1995", "source_name": "Recognition of an Infracambrian Source Rock Based on Biomarkers in the Baghewala-1 Oil", "source_type": "paper", "time_period": "1995 (geology, timeless)", "url": "https://archives.datapages.com/data/bulletns/1994-96/data/pg/0079/0010/1450/1481.htm", "variables": ["oil_geochemistry", "formation", "maturity"]}, {"confidence": "high", "geography": "Baghewala Field (as specified)", "license": "SIH program material; local file", "notes": "Authoritative requirements + reported context: 17-19 API, 46-48 C, high viscosity/asphaltene, low pressure, CSS+SRP challenges, rod/pump failure modes. Numbers treated as REPORTED context, not measurements.", "provenance_class": "BAGHEWALA_FIELD", "publisher": "Smart India Hackathon (problem_statement.json, local)", "redistribution": true, "source_id": "sih26120_problem_statement", "source_name": "SIH26120 problem statement", "source_type": "official_report", "time_period": "2026 program", "url": "local: problem_statement.json", "variables": ["api_gravity", "reservoir_temperature_c", "challenges", "equipment", "failure_modes"]}, {"confidence": "medium", "geography": "Onshore deviated SRP wells (not Baghewala)", "license": "Mendeley Data terms; DOI 10.17632/42jnkpp5tv.1; raw download under repository terms — metadata only in this repo", "notes": "Radial-stress/rod-tubing failure analysis data. Relevant to rod-failure modeling methods for Phase 3; NOT Baghewala data; raw files NOT committed.", "provenance_class": "PUBLIC_REFERENCE", "publication_date": "2022-07-01", "publisher": "Mendeley Data", "redistribution": false, "source_id": "mendeley_srp_failure_2022", "source_name": "Sucker rod failure data (radial stress analysis)", "source_type": "dataset", "time_period": "2022", "url": "https://data.mendeley.com/datasets/42jnkpp5tv", "variables": ["rod_stress", "tubing_attrition", "well_profile", "failure_location"]}, {"confidence": "medium", "geography": "Not applicable (methodology)", "license": "Repository license to be checked before reuse; methodology focus, no production weights", "notes": "End-to-end SRP dynamogram diagnostics (1D CNN + physics features). Useful as Phase-3 METHOD reference; explicitly excludes proprietary field data. Do not present as data source.", "provenance_class": "PUBLIC_REFERENCE", "publisher": "GitHub: Bojanmar/Industrial-AI-SRP-dynamogram-troubleshooting", "redistribution": false, "source_id": "bojanmar_srp_dynamogram", "source_name": "Industrial AI SRP dynamogram troubleshooting (methodology)", "source_type": "other", "time_period": "ongoing", "url": "https://github.com/Bojanmar/Industrial-AI-SRP-dynamogram-troubleshooting", "variables": ["dynamogram_schema", "cnn_method", "feature_method"]}, {"confidence": "medium", "geography": "Mossoro RN, Brazil (38 SRP wells, 50k+ cards) — NOT Baghewala", "license": "Open-access paper; underlying raw cards not redistributed here", "notes": "Dynamometer-card classification benchmark (RF/XGBoost/AutoML, up to ~99.8% in paper). Reference for Phase-3 experiment design and class-imbalance handling.", "provenance_class": "PUBLIC_REFERENCE", "publisher": "PMC (peer-reviewed)", "redistribution": false, "source_id": "pmc_srp_ml_mossoro", "source_name": "Diagnostic of operating conditions and sensor faults in SRP wells (ML)", "source_type": "paper", "time_period": "2021", "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8271678/", "variables": ["dynamometer_cards", "operating_modes", "sensor_faults", "ml_benchmarks"]}, {"confidence": "medium", "geography": "Northern China oilfield (not Baghewala)", "license": "Open-access paper (MDPI Sensors); raw data not redistributed here", "notes": "AlexNet-SVM dynamometer classification (~99.5% reported). Reference for transfer-learning approaches in Phase 3.", "provenance_class": "PUBLIC_REFERENCE", "publication_date": "2020-10-03", "publisher": "MDPI Sensors (peer-reviewed)", "redistribution": false, "source_id": "mdpi_sensors_srp_2020", "source_name": "Automatic recognition of SRP working conditions (transfer learning + SVM)", "source_type": "paper", "time_period": "2020", "url": "https://www.mdpi.com/1424-8220/20/19/5659", "variables": ["dynamometer_cards", "working_conditions", "transfer_learning"]}, {"confidence": "medium", "geography": "Two US shale oil fields (not Baghewala, not heavy oil)", "license": "Paper metadata only", "notes": "Scaled-load-ratio failure prediction: F1 0.857, ~13.97-day lead from surface loads alone. Key Phase-3 design reference: surface-only features can predict failures.", "provenance_class": "PUBLIC_REFERENCE", "publication_date": "2026-04-03", "publisher": "Peer-reviewed (via Exa library record)", "redistribution": false, "source_id": "jung_srp_failure_2026", "source_name": "Prediction of sucker rod pump failures using scaled load ratios + ML", "source_type": "paper", "time_period": "2026", "url": "https://exa.ai/library/publication/hv9xrqb2xgj", "variables": ["surface_load", "failure_labels", "lead_time", "f1"]}, {"confidence": "high", "geography": "Volve field, Norwegian North Sea (NOT heavy oil, NOT Baghewala)", "license": "Equinor Open Data Licence (research/study); raw files via Equinor/Databricks — NOT committed here", "notes": "Complete field release: production 2008-2016, ~40k files (production, wells, reports). Best open reference for production time-series METHODS. Must never be labeled Baghewala.", "provenance_class": "PUBLIC_REFERENCE", "publisher": "Equinor", "redistribution": false, "source_id": "equinor_volve_open", "source_name": "Volve field open dataset (production + subsurface)", "source_type": "dataset", "time_period": "2008-2016", "url": "https://www.equinor.com/energy/volve-data-sharing", "variables": ["production_time_series", "well_data", "reports"]}, {"confidence": "low-medium", "geography": "Global (general knowledge)", "license": "CC BY-SA (Wikipedia); general knowledge", "notes": "Heavy oil 10-20 API; CSS inject/soak/produce cycles; soak days-weeks; CSS recovers ~10-20%. Background context only.", "provenance_class": "PUBLIC_REFERENCE", "publisher": "Wikipedia contributors", "redistribution": true, "source_id": "wikipedia_heavy_oil", "source_name": "Heavy oil production (CSS overview)", "source_type": "other", "time_period": "general", "url": "https://en.wikipedia.org/wiki/Heavy_oil_production", "variables": ["css_phases", "api_bands", "recovery_factors"]}, {"confidence": "medium", "geography": "Liaohe/Karamay/Fengcheng, China (not Baghewala)", "license": "Association article; metadata only", "notes": "CSS operating envelopes: viscosities up to ~1,000,000 cP @20C handled by CSS; soak days-weeks; CSS recovery ~25%. Sanity bounds for synthetic + soft physical windows.", "provenance_class": "PUBLIC_REFERENCE", "publisher": "Canadian Heavy Oil Association", "redistribution": false, "source_id": "choa_china_css_review", "source_name": "General review on status of heavy oil development in China", "source_type": "paper", "time_period": "review", "url": "https://choa.ab.ca/a-general-review-on-status-of-heavy-oil-development-in-china/", "variables": ["css_viscosity_envelope", "soak_spans", "recovery_factors"]}], "version": "1.0"}
+{
+ "description": "Researched source registry for PetroForge Priority 1. Metadata and citations only -- no copyrighted documents, no proprietary raw data. See README.md in this folder.",
+ "sources": [
+  {
+   "confidence": "high",
+   "geography": "Baghewala Field, Jaisalmer, Rajasthan, India",
+   "license": "All rights reserved (official site); metadata only, do not copy content",
+   "notes": "Primary field evidence: Jodhpur Sandstone avg depth 1150 m; production since 2017; 35 wells drilled, 23 producing; SRP (conventional + hydraulic); thermal wellhead + VIT; field rate above 600 bbl/day; Baghewala PML 200 sq km.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publisher": "Oil India Limited (official)",
+   "redistribution": false,
+   "source_id": "oilindia_rajasthan_fields",
+   "source_name": "OIL Rajasthan Fields \u2014 Baghewala operational summary",
+   "source_type": "official_report",
+   "time_period": "undated page; describes current operations",
+   "url": "https://www.oil-india.com/rajasthan-fields",
+   "variables": [
+    "formation",
+    "avg_depth_m",
+    "lithology_context",
+    "lift_method",
+    "completion_type",
+    "wells_drilled",
+    "wells_producing",
+    "field_rate_bopd",
+    "lease_area_sqkm"
+   ]
+  },
+  {
+   "confidence": "medium-high",
+   "geography": "Baghewala Field, Bikaner-Nagaur sub-basin",
+   "license": "Press copyright; metadata only",
+   "notes": "Record 1202 bpd (+70% vs 705); FY25-26 43773 MT vs 32787 MT; CSS in 19 wells; 13 new wells; fishbone drilling, barefoot completion, electric downhole heaters, hydraulic SRP, high-temp thermal wellheads, diluent injection; discovered 1991; 200.26 sq km; 52 wells, 33 operational; CSS piloted 2018; tankers to ONGC Mehsana, Koyali refinery. CONFLICTS vs OIL page (52/33 vs 35/23; 1202 vs >600 bpd) retained as different reporting years.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2026-04-05",
+   "publisher": "The Economic Times (reporting OIL officials)",
+   "redistribution": false,
+   "source_id": "et_rajasthan_record_2026",
+   "source_name": "Oil India ramps up crude production from Rajasthan Thar desert",
+   "source_type": "press_official_statements",
+   "time_period": "FY2024-26",
+   "url": "https://economictimes.indiatimes.com/industry/energy/oil-gas/oil-india-ramps-up-crude-production-from-rajasthans-thar-desert/articleshow/130034667.cms",
+   "variables": [
+    "field_rate_bopd",
+    "annual_production_mt",
+    "wells_total",
+    "wells_operational",
+    "css_well_count",
+    "new_wells",
+    "technologies",
+    "lease_area_sqkm",
+    "logistics"
+   ]
+  },
+  {
+   "confidence": "low",
+   "geography": "Baghewala Field (as summarized)",
+   "license": "Press copyright; metadata only",
+   "notes": "Secondary summary. Steam 300-350 C and cycle-span claims are LOW confidence; used only as loose bounds, never as calibration.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2026-04-05",
+   "publisher": "Discovery Alert (secondary press)",
+   "redistribution": false,
+   "source_id": "discoveryalert_baghewala_2026",
+   "source_name": "Oil India crude production Rajasthan transformation summary",
+   "source_type": "press_secondary",
+   "time_period": "FY2024-26",
+   "url": "https://discoveryalert.com.au/oil-india-crude-production-rajasthan-transformation-2026/",
+   "variables": [
+    "steam_temperature_c",
+    "css_phases",
+    "field_rate_bopd"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Baghewala PML block, Jaisalmer",
+   "license": "Press copyright; metadata only",
+   "notes": "Expansion scope: 25 wells, 2000 BOPD target, 210 sq km block, Rs 795 cr. Area figure (210) conflicts with 200/200.26 elsewhere; retained as expansion-block scope.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2024-01-29",
+   "publisher": "ProjectX India",
+   "redistribution": false,
+   "source_id": "projectx_baghewala_pml",
+   "source_name": "Onshore development drilling in Baghewala PML block",
+   "source_type": "press_project_notice",
+   "time_period": "2024+",
+   "url": "https://projectxindia.com/2024/01/29/onshore-development-drilling-in-baghewala-pml-block/",
+   "variables": [
+    "planned_wells",
+    "target_rate_bopd",
+    "block_area_sqkm",
+    "project_cost"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Baghewala area, Rajasthan",
+   "license": "Government open page; metadata only",
+   "notes": "25 MT heavy-oil in place + 53 MT bitumen (PDVSA-era assessment); 2009 trial produced ~64 MT. Historical context, not current rates.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publisher": "Directorate of Petroleum, Government of Rajasthan",
+   "redistribution": false,
+   "source_id": "rajasthan_govt_landmark",
+   "source_name": "Rajasthan landmark petroleum development (heavy oil note)",
+   "source_type": "government_record",
+   "time_period": "historical incl. 2009 trial",
+   "url": "https://petroleum.rajasthan.gov.in/landmark-development.htm",
+   "variables": [
+    "oil_in_place_mt",
+    "bitumen_mt",
+    "trial_production_mt"
+   ]
+  },
+  {
+   "confidence": "high",
+   "geography": "Baghewala-1 well, Bikaner-Nagaur basin",
+   "license": "Paywalled journal; metadata/abstract only",
+   "notes": "Heavy sulfur-rich oil, Jodhpur Formation, early-oil-window maturity. Geology context only; no operational telemetry.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "1995-10",
+   "publisher": "AAPG Bulletin (Peters, Clark, Das Gupta, McCaffrey, Lee)",
+   "redistribution": false,
+   "source_id": "aapg_baghewala1_1995",
+   "source_name": "Recognition of an Infracambrian Source Rock Based on Biomarkers in the Baghewala-1 Oil",
+   "source_type": "paper",
+   "time_period": "1995 (geology, timeless)",
+   "url": "https://archives.datapages.com/data/bulletns/1994-96/data/pg/0079/0010/1450/1481.htm",
+   "variables": [
+    "oil_geochemistry",
+    "formation",
+    "maturity"
+   ]
+  },
+  {
+   "confidence": "high",
+   "geography": "Baghewala Field (as specified)",
+   "license": "SIH program material; local file",
+   "notes": "Authoritative requirements + reported context: 17-19 API, 46-48 C, high viscosity/asphaltene, low pressure, CSS+SRP challenges, rod/pump failure modes. Numbers treated as REPORTED context, not measurements.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publisher": "Smart India Hackathon (problem_statement.json, local)",
+   "redistribution": true,
+   "source_id": "sih26120_problem_statement",
+   "source_name": "SIH26120 problem statement",
+   "source_type": "official_report",
+   "time_period": "2026 program",
+   "url": "local: problem_statement.json",
+   "variables": [
+    "api_gravity",
+    "reservoir_temperature_c",
+    "challenges",
+    "equipment",
+    "failure_modes"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Onshore deviated SRP wells (not Baghewala)",
+   "license": "Mendeley Data terms; DOI 10.17632/42jnkpp5tv.1; raw download under repository terms \u2014 metadata only in this repo",
+   "notes": "Radial-stress/rod-tubing failure analysis data. Relevant to rod-failure modeling methods for Phase 3; NOT Baghewala data; raw files NOT committed.",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "publication_date": "2022-07-01",
+   "publisher": "Mendeley Data",
+   "redistribution": false,
+   "source_id": "mendeley_srp_failure_2022",
+   "source_name": "Sucker rod failure data (radial stress analysis)",
+   "source_type": "dataset",
+   "time_period": "2022",
+   "url": "https://data.mendeley.com/datasets/42jnkpp5tv",
+   "variables": [
+    "rod_stress",
+    "tubing_attrition",
+    "well_profile",
+    "failure_location"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Not applicable (methodology)",
+   "license": "Repository license to be checked before reuse; methodology focus, no production weights",
+   "notes": "End-to-end SRP dynamogram diagnostics (1D CNN + physics features). Useful as Phase-3 METHOD reference; explicitly excludes proprietary field data. Do not present as data source.",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "publisher": "GitHub: Bojanmar/Industrial-AI-SRP-dynamogram-troubleshooting",
+   "redistribution": false,
+   "source_id": "bojanmar_srp_dynamogram",
+   "source_name": "Industrial AI SRP dynamogram troubleshooting (methodology)",
+   "source_type": "other",
+   "time_period": "ongoing",
+   "url": "https://github.com/Bojanmar/Industrial-AI-SRP-dynamogram-troubleshooting",
+   "variables": [
+    "dynamogram_schema",
+    "cnn_method",
+    "feature_method"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Mossoro RN, Brazil (38 SRP wells, 50k+ cards) \u2014 NOT Baghewala",
+   "license": "Open-access paper; underlying raw cards not redistributed here",
+   "notes": "Dynamometer-card classification benchmark (RF/XGBoost/AutoML, up to ~99.8% in paper). Reference for Phase-3 experiment design and class-imbalance handling.",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "publisher": "PMC (peer-reviewed)",
+   "redistribution": false,
+   "source_id": "pmc_srp_ml_mossoro",
+   "source_name": "Diagnostic of operating conditions and sensor faults in SRP wells (ML)",
+   "source_type": "paper",
+   "time_period": "2021",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8271678/",
+   "variables": [
+    "dynamometer_cards",
+    "operating_modes",
+    "sensor_faults",
+    "ml_benchmarks"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Northern China oilfield (not Baghewala)",
+   "license": "Open-access paper (MDPI Sensors); raw data not redistributed here",
+   "notes": "AlexNet-SVM dynamometer classification (~99.5% reported). Reference for transfer-learning approaches in Phase 3.",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "publication_date": "2020-10-03",
+   "publisher": "MDPI Sensors (peer-reviewed)",
+   "redistribution": false,
+   "source_id": "mdpi_sensors_srp_2020",
+   "source_name": "Automatic recognition of SRP working conditions (transfer learning + SVM)",
+   "source_type": "paper",
+   "time_period": "2020",
+   "url": "https://www.mdpi.com/1424-8220/20/19/5659",
+   "variables": [
+    "dynamometer_cards",
+    "working_conditions",
+    "transfer_learning"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Two US shale oil fields (not Baghewala, not heavy oil)",
+   "license": "Paper metadata only",
+   "notes": "Scaled-load-ratio failure prediction: F1 0.857, ~13.97-day lead from surface loads alone. Key Phase-3 design reference: surface-only features can predict failures.",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "publication_date": "2026-04-03",
+   "publisher": "Peer-reviewed (via Exa library record)",
+   "redistribution": false,
+   "source_id": "jung_srp_failure_2026",
+   "source_name": "Prediction of sucker rod pump failures using scaled load ratios + ML",
+   "source_type": "paper",
+   "time_period": "2026",
+   "url": "https://exa.ai/library/publication/hv9xrqb2xgj",
+   "variables": [
+    "surface_load",
+    "failure_labels",
+    "lead_time",
+    "f1"
+   ]
+  },
+  {
+   "confidence": "high",
+   "geography": "Volve field, Norwegian North Sea (NOT heavy oil, NOT Baghewala)",
+   "license": "Equinor Open Data Licence (research/study); raw files via Equinor/Databricks \u2014 NOT committed here",
+   "notes": "Complete field release: production 2008-2016, ~40k files (production, wells, reports). Best open reference for production time-series METHODS. Must never be labeled Baghewala.",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "publisher": "Equinor",
+   "redistribution": false,
+   "source_id": "equinor_volve_open",
+   "source_name": "Volve field open dataset (production + subsurface)",
+   "source_type": "dataset",
+   "time_period": "2008-2016",
+   "url": "https://www.equinor.com/energy/volve-data-sharing",
+   "variables": [
+    "production_time_series",
+    "well_data",
+    "reports"
+   ]
+  },
+  {
+   "confidence": "low-medium",
+   "geography": "Global (general knowledge)",
+   "license": "CC BY-SA (Wikipedia); general knowledge",
+   "notes": "Heavy oil 10-20 API; CSS inject/soak/produce cycles; soak days-weeks; CSS recovers ~10-20%. Background context only.",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "publisher": "Wikipedia contributors",
+   "redistribution": true,
+   "source_id": "wikipedia_heavy_oil",
+   "source_name": "Heavy oil production (CSS overview)",
+   "source_type": "other",
+   "time_period": "general",
+   "url": "https://en.wikipedia.org/wiki/Heavy_oil_production",
+   "variables": [
+    "css_phases",
+    "api_bands",
+    "recovery_factors"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Liaohe/Karamay/Fengcheng, China (not Baghewala)",
+   "license": "Association article; metadata only",
+   "notes": "CSS operating envelopes: viscosities up to ~1,000,000 cP @20C handled by CSS; soak days-weeks; CSS recovery ~25%. Sanity bounds for synthetic + soft physical windows.",
+   "provenance_class": "PUBLIC_REFERENCE",
+   "publisher": "Canadian Heavy Oil Association",
+   "redistribution": false,
+   "source_id": "choa_china_css_review",
+   "source_name": "General review on status of heavy oil development in China",
+   "source_type": "paper",
+   "time_period": "review",
+   "url": "https://choa.ab.ca/a-general-review-on-status-of-heavy-oil-development-in-china/",
+   "variables": [
+    "css_viscosity_envelope",
+    "soak_spans",
+    "recovery_factors"
+   ]
+  },
+  {
+   "confidence": "high",
+   "geography": "BGW-8 well, Baghewala PML",
+   "license": "Trade press; metadata only",
+   "notes": "India's first CSS started at BGW-8 (Dec 2018); Belgrave Oil & Gas assisting; prior chemical floods/portable steam noted.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2018-12-04",
+   "publisher": "Oil & Gas Journal (editors)",
+   "redistribution": false,
+   "source_id": "ogj_css_start_2018",
+   "source_name": "OIL starts CSS of well in Rajasthan (BGW-8)",
+   "source_type": "press_trade",
+   "time_period": "2018-12",
+   "url": "https://www.ogj.com/drilling-production/production-operations/unconventional-resources/article/17296851/oil-starts-css-of-well-in-rajasthan",
+   "variables": [
+    "well_id",
+    "css_commissioning",
+    "consultant",
+    "prior_methods"
+   ]
+  },
+  {
+   "confidence": "high",
+   "geography": "BGW-8 well, Baghewala PML",
+   "license": "Press copyright; metadata only",
+   "notes": "CSS commissioned in BGW-8 under Dr. John Belgrave; pilot + 2 more wells then field scale. Corroborates OGJ.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2018-12-04",
+   "publisher": "Business Standard",
+   "redistribution": false,
+   "source_id": "business_standard_css_2018",
+   "source_name": "Oil India commissions CSS Technology (BGW-8)",
+   "source_type": "press_official_statements",
+   "time_period": "2018-12",
+   "url": "https://www.business-standard.com/article/news-cm/oil-india-commissions-cyclic-steam-stimulation-technology-118120400874_1.html",
+   "variables": [
+    "well_id",
+    "css_commissioning",
+    "consultant",
+    "pilot_scope"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "BGW-8 well (~1100 m)",
+   "license": "Press copyright; metadata only",
+   "notes": "~80-90 bopd post-pilot; Jaisalmer reserves 13 MMT (reported); pilot Nov 2018 date confirmation.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2019-06-05",
+   "publisher": "Times of India (TNN, officials quoted)",
+   "redistribution": false,
+   "source_id": "toi_css_jaipur_2019",
+   "source_name": "Oil India commissions CSS tech (BGW-8 rate report)",
+   "source_type": "press_official_statements",
+   "time_period": "2019-06",
+   "url": "https://timesofindia.indiatimes.com/city/jaipur/oil-india-commissions-css-tech-for-crude-oil-extraction/articleshow/69668964.cms",
+   "variables": [
+    "well_id",
+    "post_css_rate_bopd",
+    "well_depth_m",
+    "reserves_mmt"
+   ]
+  },
+  {
+   "confidence": "medium-high",
+   "geography": "Baghewala Field",
+   "license": "Press copyright; metadata only",
+   "notes": "CSS in 19 wells (+72%); 13 new wells; 1202 bpd FY25-26; BGW-08 pilot Nov 2018 confirmed; 52 wells/33 producing.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2026-04-02",
+   "publisher": "Times of India (Vimal Bhatia, officials quoted)",
+   "redistribution": false,
+   "source_id": "toi_record_output_2026",
+   "source_name": "OIL records highest-ever crude output in Jaisalmer",
+   "source_type": "press_official_statements",
+   "time_period": "FY2025-26",
+   "url": "https://timesofindia.indiatimes.com/city/jaipur/oil-india-limited-records-highest-ever-crude-output-in-jaisalmer/articleshow/129970210.cms",
+   "variables": [
+    "field_rate_bopd",
+    "css_well_count",
+    "new_wells",
+    "technologies",
+    "pilot_well"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Baghewala wells 1 & 4",
+   "license": "Press copyright; metadata only",
+   "notes": "1991-94: 5 wells tested; wells 1 & 4 good heavy-oil producers; halted on viscosity/inflow. 20-well development plan (Rs 220 cr) with environmental clearance.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2016-10-09",
+   "publisher": "Telegraph India",
+   "redistribution": false,
+   "source_id": "telegraph_oil_begin_drill_2016",
+   "source_name": "OIL to begin Rajasthan drill (wells 1 & 4 tests)",
+   "source_type": "press_official_statements",
+   "time_period": "1991-2016",
+   "url": "https://www.telegraphindia.com/business/oil-to-begin-rajasthan-drill/cid/1458207",
+   "variables": [
+    "well_id",
+    "early_test_status",
+    "development_plan"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "BGW-17 well",
+   "license": "Vendor page; metadata only",
+   "notes": "Vendor (contractor) source: secondary. First injection phase done; ~17 days injection in BGW-17; ops since Apr 2022; moving to second well.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2022-08-02",
+   "publisher": "Nakasawa Resources (contractor)",
+   "redistribution": false,
+   "source_id": "nakasawa_baghewala_css_2022",
+   "source_name": "Baghewala CSS injection completion (BGW-17)",
+   "source_type": "contractor_report",
+   "time_period": "2022-04/08",
+   "url": "https://oldversion.nakasawaresources.com/we-keep-on-achieving-success-for-our-clients/",
+   "variables": [
+    "well_id",
+    "injection_completion",
+    "injection_days"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Bikaner-Nagaur / Punjab Platform incl. Baghewala-1",
+   "license": "Open-access journal; metadata only",
+   "notes": "Baghewala-1 discovery 1991; API 17.6 reported; 94 MMT (628 MMbbl) in-place cited; 5 development wells mentioned nearby; Jodhpur/Bilara reservoir context.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publisher": "Sindh Univ. Research Journal (Zaidi et al.)",
+   "redistribution": false,
+   "source_id": "punjab_platform_study_zaidi",
+   "source_name": "Evaluation of Infra-Cambrian plays (Baghewala-1 context)",
+   "source_type": "paper",
+   "time_period": "review",
+   "url": "https://sujo.usindh.edu.pk/index.php/SURJ/article/download/5937/4021/10888",
+   "variables": [
+    "discovery_well",
+    "api_gravity_single",
+    "oil_in_place",
+    "stratigraphy"
+   ]
+  },
+  {
+   "confidence": "medium",
+   "geography": "Baghewala steam wells (10+)",
+   "license": "Publisher page metadata only",
+   "notes": "Cementing for cyclic-steam wells in Baghewala: >10 wells, thermal cement design, wellhead-growth prevention. Context for thermal completions; no per-well telemetry.",
+   "provenance_class": "BAGHEWALA_FIELD",
+   "publication_date": "2020-10-27",
+   "publisher": "SPE via Exa record (Ganguly et al.)",
+   "redistribution": false,
+   "source_id": "spe_cementing_baghewala_2020",
+   "source_name": "Cementing production casing for steam injection wells (Baghewala case)",
+   "source_type": "paper",
+   "time_period": "2020",
+   "url": "https://exa.ai/library/publication/hj75301xmyb",
+   "variables": [
+    "thermal_completion",
+    "steam_well_count",
+    "wellhead_growth"
+   ]
+  }
+ ],
+ "version": "1.0"
+}

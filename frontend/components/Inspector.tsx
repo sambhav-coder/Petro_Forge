@@ -7,6 +7,7 @@ import type {
   IsolatableKind,
   ObjectKind,
   OptimizeResponse,
+  PublicWellDetail,
   SceneSelection,
   TwinSnapshot,
   WellTelemetry,
@@ -136,6 +137,7 @@ export default function Inspector({
   wellId,
   telemetry,
   twin,
+  publicDetail,
   opt,
   optLoading,
   onRunOptimize,
@@ -147,6 +149,7 @@ export default function Inspector({
   wellId: string | null;
   telemetry: WellTelemetry | null;
   twin: TwinSnapshot | null;
+  publicDetail: PublicWellDetail | null;
   opt: OptimizeResponse | null;
   optLoading: boolean;
   onRunOptimize: () => void;
@@ -222,7 +225,33 @@ export default function Inspector({
       </div>
 
       <div className="flex-1 overflow-y-auto scroll-thin p-4 space-y-4 min-h-0">
-        {!twin || !telemetry ? (
+        {publicDetail && !twin ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Pill level="MODERATE" />
+              <span className="text-[11px] font-mono text-slate-300">PUBLIC FIELD RECORD</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Verified historical record (BAGHEWALA_FIELD) — not live telemetry.
+              No twin snapshot: insufficient public telemetry.
+            </p>
+            <Rows
+              rows={[
+                ["Status", `${publicDetail.status ?? "—"}${publicDetail.status_as_of ? ` (as of ${publicDetail.status_as_of})` : ""}`],
+                ["Lift", publicDetail.lift_method ?? "—"],
+                ["CSS status", publicDetail.css_status ?? "—"],
+                ["CSS cycles", publicDetail.css_cycle_count != null ? String(publicDetail.css_cycle_count) : "—"],
+                ["CSS events", String(publicDetail.css.length)],
+                ["Production recs", String(publicDetail.production.length)],
+                ["Confidence", publicDetail.confidence ?? "—"],
+                ["Source", publicDetail.source_id ?? "—"],
+              ]}
+            />
+            {publicDetail.notes && (
+              <p className="text-[11px] text-slate-400">{publicDetail.notes}</p>
+            )}
+          </div>
+        ) : !twin || !telemetry ? (
           <p className="text-xs text-slate-500 font-mono">
             {wellId ? "Loading twin state…" : "No well selected."}
           </p>
