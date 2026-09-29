@@ -1,4 +1,4 @@
-import type { DataSummary, OptimizeResponse, TwinSnapshot, WellsResponse, WellTelemetry } from "./types";
+import type { DataSummary, OptimizeResponse, TwinSnapshot, WellsResponse, WellTelemetry, HistoryResponse, WellCoverageSummary } from "./types";
 
 export function apiBase(): string {
   const raw =
@@ -56,4 +56,12 @@ export const api = {
         water_cut_percent: 35.0,
       }),
     }),
+  history: (params: {
+    well_id?: string;
+    include_derived?: boolean;
+    include_synthetic?: boolean;
+    include_live?: boolean;
+    limit?: number;
+  }) => request<HistoryResponse>(`/api/v1/history?${new URLSearchParams(params as Record<string, string>).toString()}`),
+  historyCoverage: (wellId: string) => request<WellCoverageSummary>(`/api/v1/history/coverage/${encodeURIComponent(wellId)}`),
 };

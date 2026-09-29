@@ -40,6 +40,7 @@ import twin_physics
 import twin_optimize
 
 from data import DATA_SCHEMA_VERSION, SYNTHETIC_GENERATOR_VERSION
+from data import history as history_engine
 from data.bootstrap import bootstrap_public_data
 from data.pipeline import ingest_telemetry_batch
 from data.provenance import ProvenanceClass
@@ -449,6 +450,8 @@ async def ingest_telemetry(payload: WellTelemetry):
     Block 2 attaches a concise deterministic engineering summary computed
     by twin_physics. No ML, no risk scoring beyond transparent engineering
     indicators, no AI inference.
+
+    Priority 2: also creates a historical observation snapshot.
     """
     ts = payload.timestamp or _utc_now_iso()
     state = payload.model_copy(update={"timestamp": ts})
@@ -471,6 +474,30 @@ async def ingest_telemetry(payload: WellTelemetry):
     )
     if len(AUDIT_LOGS) > 100:
         AUDIT_LOGS.pop(0)
+
+    # Priority 2: create historical observation snapshot
+    hist_obs = history_engine.HistoricalObservation(
+        record_id=f"TEL-{state.well_id}-{event_id}",
+        timestamp_start=ts,
+        timestamp_end=ts,
+        timestamp_precision=history_engine.TemporalPrecision.DATETIME,
+        original_period=ts,
+        approximate=False,
+        well_id=state.well_id,
+        scope=history_engine.ObservationScope.WELL,
+        variable="oil_rate_bopd",
+        value=state.oil_rate_bopd,
+        unit="bopd",
+        value_kind=history_engine.ValueKind.MEASURED,
+        source_id="live_telemetry_ingest",
+        provenance=history_engine.ProvenanceClass.UNKNOWN,
+        data_status="LIVE_TELEMETRY",
+        time_series_safe=True,
+        ml_safe=True,
+        data_quality="VALID",
+        notes="Live telemetry snapshot created on ingest.",
+    )
+    _HISTORY_REPO.insert(hist_obs)
 
     snapshot = twin_physics.twin_snapshot(state)
     summary = TwinSummaryResponse(
@@ -800,6 +827,175 @@ async def data_ingest(payload: DataIngestRequest):
         [k for k, v in report.quality_by_status.items() for _ in range(v)]
     )
     return report.to_dict()
+
+
+# ---------------- Priority 2: historical / time-series engine ----------------
+# Trustworthy historical foundation with temporal precision preservation,
+# provenance isolation, and coverage-aware querying.
+
+_HISTORY_REPO = history_engine.InMemoryHistoryRepository()
+_HISTORY_BOOT = history_engine.build_public_history(_PUBLIC_BOOT)
+_BOOT_REPORT = _HISTORY_REPO.bulk_insert(_HISTORY_BOOT)
+
+
+class HistoryQueryParams(BaseModel):
+    well_id: Optional[str] = None
+    scope: Optional[str] = None
+    variable: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
+    provenance: Optional[List[str]] = None
+    precision: Optional[List[str]] = None
+    include_derived: bool = False
+    include_synthetic: bool = False
+    include_live: bool = True
+    limit: int = 100
+
+
+@app.get("/api/v1/history", tags=["History"])
+async def get_history(params: HistoryQueryParams = HistoryQueryParams()):
+    """Query historical observations with safety defaults.
+
+    Defaults exclude derived and synthetic data to prevent accidental mixing
+    of provenance classes. Explicit filters required to include them.
+    """
+    obs = _HISTORY_REPO.query(
+        well_id=params.well_id,
+        scope=params.scope,
+        variable=params.variable,
+        start=params.start,
+        end=params.end,
+        provenance=params.provenance,
+        precision=params.precision,
+        include_derived=params.include_derived,
+        include_synthetic=params.include_synthetic,
+        include_live=params.include_live,
+        limit=params.limit,
+    )
+    coverage = history_engine.compute_coverage(obs)
+    return {
+        "query": params.model_dump(exclude_none=True),
+        "count": len(obs),
+        "observations": [o.model_dump() for o in obs],
+        "coverage": coverage,
+        "metadata": {
+            "include_derived": params.include_derived,
+            "include_synthetic": params.include_synthetic,
+            "include_live": params.include_live,
+        },
+    }
+
+
+@app.get("/api/v1/history/wells/{well_id}", tags=["History"])
+async def get_well_history(well_id: str, include_derived: bool = False,
+                          include_synthetic: bool = False, include_live: bool = True,
+                          variable: Optional[str] = None, limit: int = 100):
+    """Historical observations for a specific well."""
+    obs = _HISTORY_REPO.query(
+        well_id=well_id,
+        variable=variable,
+        include_derived=include_derived,
+        include_synthetic=include_synthetic,
+        include_live=include_live,
+        limit=limit,
+    )
+    coverage = history_engine.well_coverage_summary(_HISTORY_REPO, well_id)
+    return {
+        "well_id": well_id,
+        "count": len(obs),
+        "observations": [o.model_dump() for o in obs],
+        "coverage": coverage,
+    }
+
+
+@app.get("/api/v1/history/field", tags=["History"])
+async def get_field_history(include_derived: bool = False,
+                             include_synthetic: bool = False, include_live: bool = True,
+                             variable: Optional[str] = None, limit: int = 100):
+    """Field-level historical observations."""
+    obs = _HISTORY_REPO.query(
+        scope="FIELD",
+        variable=variable,
+        include_derived=include_derived,
+        include_synthetic=include_synthetic,
+        include_live=include_live,
+        limit=limit,
+    )
+    coverage = history_engine.compute_coverage(obs)
+    return {
+        "scope": "FIELD",
+        "count": len(obs),
+        "observations": [o.model_dump() for o in obs],
+        "coverage": coverage,
+    }
+
+
+@app.get("/api/v1/history/coverage/{well_id}", tags=["History"])
+async def get_well_coverage(well_id: str):
+    """Coverage summary for a well (no observation details)."""
+    return history_engine.well_coverage_summary(_HISTORY_REPO, well_id)
+
+
+@app.get("/api/v1/history/trend/{well_id}", tags=["History"])
+async def get_well_trend(well_id: str, variable: str,
+                        include_derived: bool = False, include_synthetic: bool = False,
+                        include_live: bool = True):
+    """Trend analysis for a well's variable.
+
+    Returns INSUFFICIENT for sparse series; never fabricates trends.
+    """
+    obs = _HISTORY_REPO.query(
+        well_id=well_id,
+        variable=variable,
+        include_derived=include_derived,
+        include_synthetic=include_synthetic,
+        include_live=include_live,
+        limit=1000,
+    )
+    return history_engine.analyze_trend(obs)
+
+
+@app.get("/api/v1/history/aggregate", tags=["History"])
+async def aggregate_history(operation: str, well_id: Optional[str] = None,
+                           scope: Optional[str] = None, variable: Optional[str] = None,
+                           include_derived: bool = False, include_synthetic: bool = False,
+                           include_live: bool = True, limit: int = 100):
+    """Safe aggregation over historical observations.
+
+    Operations: count, min, max, mean, median, sum, latest, earliest.
+    Refuses inappropriate aggregations with warnings.
+    """
+    obs = _HISTORY_REPO.query(
+        well_id=well_id,
+        scope=scope,
+        variable=variable,
+        include_derived=include_derived,
+        include_synthetic=include_synthetic,
+        include_live=include_live,
+        limit=limit,
+    )
+    return history_engine.safe_aggregate(obs, operation)
+
+
+@app.get("/api/v1/history/stats", tags=["History"])
+async def get_history_stats():
+    """Historical repository statistics."""
+    return {
+        "schema_version": history_engine.HISTORY_SCHEMA_VERSION,
+        "repository": _HISTORY_REPO.counts(),
+        "bootstrap": _BOOT_REPORT,
+        "variable_registry": {
+            name: {
+                "label": spec.label,
+                "unit": spec.unit,
+                "domain": spec.domain,
+                "kind": spec.kind.value,
+                "chartable": spec.chartable,
+                "ml_eligible": spec.ml_eligible,
+            }
+            for name, spec in history_engine.VARIABLE_REGISTRY.items()
+        },
+    }
 
 
 @app.post("/api/v1/action/dispatch", response_model=DispatchResponse, tags=["Operations"])

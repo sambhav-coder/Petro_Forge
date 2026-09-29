@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { OBJECT_META, fmt } from "@/lib/scene";
 import { COMPONENTS, isIsolatable } from "@/lib/components";
+import { api } from "@/lib/api";
 import type {
   IsolatableKind,
   ObjectKind,
@@ -11,9 +12,11 @@ import type {
   SceneSelection,
   TwinSnapshot,
   WellTelemetry,
+  HistoryResponse,
+  WellCoverageSummary,
 } from "@/lib/types";
 
-type Tab = "OVERVIEW" | "TELEMETRY" | "PHYSICS" | "ANALYTICS" | "ML" | "OPTIMIZATION";
+type Tab = "OVERVIEW" | "TELEMETRY" | "PHYSICS" | "HISTORY" | "ANALYTICS" | "ML" | "OPTIMIZATION";
 
 function Pill({ level }: { level: string }) {
   const cls =
@@ -158,7 +161,32 @@ export default function Inspector({
   onShowAll: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("OVERVIEW");
-  const tabs: Tab[] = ["OVERVIEW", "TELEMETRY", "PHYSICS", "ANALYTICS", "ML", "OPTIMIZATION"];
+  const [historyData, setHistoryData] = useState<HistoryResponse | null>(null);
+  const [coverageData, setCoverageData] = useState<WellCoverageSummary | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const tabs: Tab[] = ["OVERVIEW", "TELEMETRY", "PHYSICS", "HISTORY", "ANALYTICS", "ML", "OPTIMIZATION"];
+
+  // Load historical data when HISTORY tab is selected
+  useEffect(() => {
+    if (tab === "HISTORY" && wellId) {
+      setHistoryLoading(true);
+      Promise.all([
+        api.history({ well_id, include_derived: false, include_synthetic: false, include_live: true, limit: 100 }),
+        api.historyCoverage(wellId),
+      ])
+        .then(([history, coverage]) => {
+          setHistoryData(history);
+          setCoverageData(coverage);
+        })
+        .catch(() => {
+          setHistoryData(null);
+          setCoverageData(null);
+        })
+        .finally(() => {
+          setHistoryLoading(false);
+        });
+    }
+  }, [tab, wellId]);
 
   return (
     <aside className="glass rounded-none border-l border-slate-700/40 w-[380px] shrink-0 flex flex-col min-h-0">
@@ -422,11 +450,146 @@ export default function Inspector({
               </div>
             )}
 
+            {tab === "HISTORY" && (
+              <div className="space-y-3">
+                {historyLoading ? (
+                  <p className="text-xs text-slate-500 font-mono">Loading historical data…</p>
+                ) : coverageData ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Pill level={coverageData.time_series_ready ? "LOW" : "MODERATE"} />
+                      <span className="text-[11px] font-mono text-slate-300">
+                        {coverageData.time_series_ready ? "TIME-SERIES READY" : "INSUFFICIENT COVERAGE"}
+                      </span>
+                    </div>
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">COVERAGE SUMMARY</h4>
+                      <Rows
+                        rows={[
+                          ["Observations", String(coverageData.coverage.observation_count)],
+                          ["Temporal coverage", coverageData.coverage.temporal_coverage],
+                          ["Has gaps", coverageData.coverage.has_gaps ? "Yes" : "No"],
+                          ["Measured", String(coverageData.coverage.measured_count)],
+                          ["Derived", String(coverageData.coverage.derived_count)],
+                          ["Synthetic", String(coverageData.coverage.synthetic_count)],
+                          ["Time-series safe", String(coverageData.coverage.time_series_safe_count)],
+                          ["ML-safe", String(coverageData.coverage.ml_safe_count)],
+                        ]}
+                      />
+                    </section>
+                    {coverageData.coverage.provenance_classes.length > 0 && (
+                      <section>
+                        <h4 className="text-[11px] font-bold text-slate-300 mb-1">PROVENANCE</h4>
+                        <div className="flex flex-wrap gap-1">
+                          {coverageData.coverage.provenance_classes.map((prov) => (
+                            <span
+                              key={prov}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                                prov === "BAGHEWALA_FIELD"
+                                  ? "bg-leaf/15 text-leaf border-leaf/40"
+                                  : prov === "DERIVED"
+                                    ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                    : prov === "SYNTHETIC_BAGHEWALA"
+                                      ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                                      : prov === "LIVE_TELEMETRY"
+                                        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                        : "bg-slate-700/60 text-slate-300 border-slate-600/50"
+                              }`}
+                            >
+                              {prov.replace("_BAGHEWALA", "")}
+                            </span>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                    {Object.keys(coverageData.variables).length > 0 && (
+                      <section>
+                        <h4 className="text-[11px] font-bold text-slate-300 mb-1">VARIABLES</h4>
+                        <div className="text-[10px] font-mono text-slate-400 space-y-0.5">
+                          {Object.entries(coverageData.variables).map(([varName, count]) => (
+                            <div key={varName}>
+                              {varName}: {count} observation{count !== 1 ? "s" : ""}
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                    {historyData && historyData.observations.length > 0 && (
+                      <section>
+                        <h4 className="text-[11px] font-bold text-slate-300 mb-1">RECENT OBSERVATIONS</h4>
+                        <div className="space-y-2 max-h-48 overflow-y-auto scroll-thin">
+                          {historyData.observations.slice(0, 10).map((obs) => (
+                            <div key={obs.record_id} className="rounded-lg border border-slate-700/50 bg-slate-800/40 px-2.5 py-2 space-y-1">
+                              <div className="flex justify-between items-start gap-2">
+                                <div className="text-[11px] font-mono text-slate-200">
+                                  {obs.variable}: {obs.value !== null ? `${obs.value} ${obs.unit}` : obs.value_str || "—"}
+                                </div>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-mono border ${
+                                    obs.provenance === "BAGHEWALA_FIELD"
+                                      ? "bg-leaf/15 text-leaf border-leaf/40"
+                                      : obs.provenance === "DERIVED"
+                                        ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                        : obs.provenance === "SYNTHETIC_BAGHEWALA"
+                                          ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                                          : obs.data_status === "LIVE_TELEMETRY"
+                                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                            : "bg-slate-700/60 text-slate-300 border-slate-600/50"
+                                  }`}
+                                >
+                                  {obs.provenance.replace("_BAGHEWALA", "")}
+                                </span>
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-500">
+                                {obs.timestamp_start} ({obs.timestamp_precision})
+                              </div>
+                              {obs.value_kind === "reported_range" && obs.reported_min !== null && obs.reported_max !== null && (
+                                <div className="text-[10px] font-mono text-amber-200">
+                                  Reported range: {obs.reported_min}–{obs.reported_max} {obs.unit}
+                                </div>
+                              )}
+                              {obs.value_kind === "derived_midpoint" && (
+                                <div className="text-[10px] font-mono text-amber-200">
+                                  Derived midpoint — not a raw measurement
+                                </div>
+                              )}
+                              {obs.notes && (
+                                <div className="text-[10px] font-mono text-slate-500">{obs.notes}</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {historyData.observations.length > 10 && (
+                          <p className="text-[10px] font-mono text-slate-500">
+                            Showing 10 of {historyData.count} observations
+                          </p>
+                        )}
+                      </section>
+                    )}
+                    {!coverageData.time_series_ready && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                        <p className="text-[11px] font-mono text-amber-200">
+                          Insufficient time-series coverage for trend analysis or charting.
+                          {coverageData.coverage.observation_count < 2
+                            ? ` Only ${coverageData.coverage.observation_count} observation${coverageData.coverage.observation_count !== 1 ? "s" : ""} available.`
+                            : " Temporal precision or observation count insufficient."}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500 font-mono">
+                    No historical data available for this well.
+                  </p>
+                )}
+              </div>
+            )}
+
             {tab === "ANALYTICS" && (
               <div className="text-xs text-slate-400 space-y-2">
                 <Pill level="MODERATE" />
-                <p className="font-mono">Coming in Phase 2 — Historical / Public Data Platform.</p>
-                <p>No historical analytics exist in this baseline; nothing is fabricated here.</p>
+                <p className="font-mono">Coming in Phase 3 — Advanced Analytics.</p>
+                <p>Advanced trend analysis and anomaly detection will be available with ML integration.</p>
               </div>
             )}
 
@@ -434,7 +597,7 @@ export default function Inspector({
               <div className="text-xs text-slate-400 space-y-2">
                 <Pill level="MODERATE" />
                 <p className="font-mono">Coming in Phase 3 — ML Intelligence.</p>
-                <p>No trained model exists in this baseline; risk values are deterministic engineering proxies.</p>
+                <p>ML models will consume only ML-safe historical observations. See HISTORY tab for data readiness.</p>
               </div>
             )}
 

@@ -182,3 +182,83 @@ export interface SceneSelection {
 }
 
 export type CameraPreset = "FIELD" | "WELL" | "WELLBORE" | "RESERVOIR" | "PUMP";
+
+/* Priority 2: Historical time-series types */
+export interface HistoricalObservation {
+  record_id: string;
+  timestamp_start: string;
+  timestamp_end: string | null;
+  timestamp_precision: string;
+  original_period: string;
+  approximate: boolean;
+  well_id: string | null;
+  scope: string;
+  variable: string;
+  value: number | null;
+  value_str: string | null;
+  reported_min: number | null;
+  reported_max: number | null;
+  unit: string;
+  value_kind: string;
+  derivation: string | null;
+  derived_from: string | null;
+  source_id: string;
+  provenance: string;
+  data_status: string;
+  source_publication_date: string | null;
+  time_series_safe: boolean;
+  ml_safe: boolean;
+  data_quality: string;
+  notes: string;
+}
+
+export interface HistoryCoverage {
+  observation_count: number;
+  temporal_coverage: string;
+  has_gaps: boolean;
+  duplicate_count: number;
+  provenance_classes: string[];
+  measured_count: number;
+  derived_count: number;
+  synthetic_count: number;
+  insufficient_count: number;
+  time_series_safe_count: number;
+  ml_safe_count: number;
+  precision_breakdown: Record<string, number>;
+}
+
+export interface WellCoverageSummary {
+  well_id: string;
+  coverage: HistoryCoverage;
+  variables: Record<string, number>;
+  time_series_ready: boolean;
+  ml_ready: boolean;
+}
+
+export interface HistoryResponse {
+  query: Record<string, unknown>;
+  count: number;
+  observations: HistoricalObservation[];
+  coverage: HistoryCoverage;
+  metadata: {
+    include_derived: boolean;
+    include_synthetic: boolean;
+    include_live: boolean;
+  };
+}
+
+export interface TrendAnalysis {
+  status: "INSUFFICIENT" | "TREND_AVAILABLE";
+  reason?: string;
+  observation_count: number;
+  numeric_count?: number;
+  temporal_precision?: Set<string>;
+  first_value?: number;
+  last_value?: number;
+  change?: number;
+  change_percent?: number | null;
+  direction?: string;
+  min_value?: number;
+  max_value?: number;
+  mean_value?: number;
+}
