@@ -26,7 +26,13 @@ class FeatureEngineer:
         lags: Optional[List[int]] = None,
         entity_column: str = "well_id",
     ) -> pd.DataFrame:
-        """Add lag features for time-series data."""
+        """Add lag features for time-series data.
+        
+        LEAKAGE-SAFE: Uses shift() which only uses past values.
+        Lag N feature at row T uses value from row T-N (strictly in the past).
+        Current observation (row T) is never included in lag features.
+        Entity grouping prevents cross-entity leakage.
+        """
         
         if lags is None:
             lags = list(range(1, self.config.max_lag_periods + 1))
@@ -34,6 +40,7 @@ class FeatureEngineer:
         featured = data.copy()
         
         # Sort by entity and timestamp if available
+        # Chronological ordering is REQUIRED for temporal safety
         if entity_column in featured.columns:
             if "timestamp" in featured.columns:
                 featured = featured.sort_values([entity_column, "timestamp"])
@@ -42,14 +49,17 @@ class FeatureEngineer:
         
         for lag in lags:
             lag_col = f"{value_column}_lag_{lag}"
+            # shift(lag) moves values down by lag rows
+            # Row T gets value from row T-lag (strictly in the past)
             featured[lag_col] = featured.groupby(entity_column)[value_column].shift(lag)
             
             self.feature_registry[lag_col] = {
                 "type": "lag",
                 "source_column": value_column,
                 "lag": lag,
-                "description": f"{value_column} lagged by {lag} periods",
+                "description": f"{value_column} lagged by {lag} periods (strictly past values only)",
                 "leakage_risk": "none",
+                "temporal_safety": "shift(lag) uses only T-lag, never current or future",
             }
         
         return featured
@@ -62,7 +72,13 @@ class FeatureEngineer:
         functions: Optional[List[str]] = None,
         entity_column: str = "well_id",
     ) -> pd.DataFrame:
-        """Add rolling window features."""
+        """Add rolling window features.
+        
+        LEAKAGE-SAFE: Uses rolling() with min_periods=1 which includes current observation.
+        Current observation IS included in rolling statistics by design.
+        Entity grouping prevents cross-entity leakage.
+        Chronological sorting required for temporal safety.
+        """
         
         if windows is None:
             windows = [self.config.default_rolling_window]
@@ -73,6 +89,7 @@ class FeatureEngineer:
         featured = data.copy()
         
         # Sort by entity and timestamp if available
+        # Chronological ordering is REQUIRED for temporal safety
         if entity_column in featured.columns:
             if "timestamp" in featured.columns:
                 featured = featured.sort_values([entity_column, "timestamp"])
@@ -109,8 +126,9 @@ class FeatureEngineer:
                     "source_column": value_column,
                     "window": window,
                     "function": func,
-                    "description": f"{func} of {value_column} over {window} periods",
+                    "description": f"{func} of {value_column} over {window} periods (includes current obs)",
                     "leakage_risk": "none",
+                    "temporal_safety": "rolling includes current observation, never future",
                 }
         
         return featured
@@ -122,7 +140,13 @@ class FeatureEngineer:
         periods: Optional[List[int]] = None,
         entity_column: str = "well_id",
     ) -> pd.DataFrame:
-        """Add delta (change) features."""
+        """Add delta (change) features.
+        
+        LEAKAGE-SAFE: Uses diff() and pct_change() which only use past values.
+        Delta for period N at row T compares row T to row T-N (past only).
+        Entity grouping prevents cross-entity leakage.
+        Chronological sorting required for temporal safety.
+        """
         
         if periods is None:
             periods = [1]
@@ -130,6 +154,7 @@ class FeatureEngineer:
         featured = data.copy()
         
         # Sort by entity and timestamp if available
+        # Chronological ordering is REQUIRED for temporal safety
         if entity_column in featured.columns:
             if "timestamp" in featured.columns:
                 featured = featured.sort_values([entity_column, "timestamp"])
@@ -140,23 +165,27 @@ class FeatureEngineer:
             delta_col = f"{value_column}_delta_{period}"
             pct_change_col = f"{value_column}_pct_change_{period}"
             
+            # diff(periods) computes T - T-period (past only)
             featured[delta_col] = featured.groupby(entity_column)[value_column].diff(periods=period)
+            # pct_change computes (T - T-period) / T-period (past only)
             featured[pct_change_col] = featured.groupby(entity_column)[value_column].pct_change(periods=period)
             
             self.feature_registry[delta_col] = {
                 "type": "delta",
                 "source_column": value_column,
                 "period": period,
-                "description": f"Change in {value_column} over {period} periods",
+                "description": f"Change in {value_column} over {period} periods (T - T-period, past only)",
                 "leakage_risk": "none",
+                "temporal_safety": "diff(periods) uses only T-period, never future",
             }
             
             self.feature_registry[pct_change_col] = {
                 "type": "pct_change",
                 "source_column": value_column,
                 "period": period,
-                "description": f"Percentage change in {value_column} over {period} periods",
+                "description": f"Percentage change in {value_column} over {period} periods (past only)",
                 "leakage_risk": "none",
+                "temporal_safety": "pct_change uses only T-period, never future",
             }
         
         return featured

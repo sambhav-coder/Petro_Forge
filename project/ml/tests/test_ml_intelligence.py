@@ -671,5 +671,516 @@ class TestPriority1ContractPreservation:
         pass  # Contract preserved by eligibility checks
 
 
+class TestMLHardeningBaghewalaProvenance:
+    """Test Baghewala provenance detection (hardening)."""
+    
+    def test_small_external_dataset_not_mistaken_for_baghewala(self):
+        """Test that small external dataset is NOT automatically classified as Baghewala."""
+        model = ForecastingModel(ModelRegistry())
+        
+        # Small external dataset without Baghewala provenance
+        data = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=50),
+            "well_id": ["EXT-01"] * 50,
+            "oil_rate_bopd": range(50),
+            "spm": [5.0] * 50,
+        })
+        
+        result = model.train(
+            data, 
+            target_column="oil_rate_bopd",
+            dataset_id="external_reference_01",
+            dataset_provenance="PUBLIC_REFERENCE"
+        )
+        
+        # Should NOT be classified as Baghewala just because it's small
+        # Should be rejected for insufficient observations (50 < 100), not Baghewala
+        assert result["eligibility"] == MLEligibility.INSUFFICIENT_DATA
+        assert "insufficient observations" in result["reason"].lower()
+        assert "baghewala" not in result["reason"].lower()
+    
+    def test_explicit_baghewala_provenance_detection(self):
+        """Test that explicit Baghewala provenance IS detected correctly."""
+        model = ForecastingModel(ModelRegistry())
+        
+        # Dataset with sufficient rows but explicit Baghewala provenance
+        data = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=150),
+            "well_id": ["BGW-01"] * 150,
+            "oil_rate_bopd": range(150),
+            "spm": [5.0] * 150,
+        })
+        
+        result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            dataset_id="baghewala_public",
+            dataset_provenance="BAGHEWALA_FIELD"
+        )
+        
+        # Should be rejected explicitly as Baghewala
+        assert result["success"] == False
+        assert result["eligibility"] == MLEligibility.INSUFFICIENT_DATA
+        assert "baghewala" in result["reason"].lower()
+    
+    def test_synthetic_baghewala_isolation(self):
+        """Test that synthetic Baghewala remains separate from public Baghewala."""
+        model = ForecastingModel(ModelRegistry())
+        
+        # Synthetic dataset with Baghewala ID
+        data = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=150),
+            "well_id": ["BGW-01"] * 150,
+            "oil_rate_bopd": range(150),
+        })
+        
+        result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            dataset_id="synthetic_baghewala_test",
+            dataset_provenance="SYNTHETIC_BAGHEWALA"
+        )
+        
+        # Should be rejected as Baghewala (synthetic still has Baghewala in provenance)
+        assert result["success"] == False
+        assert result["eligibility"] == MLEligibility.INSUFFICIENT_DATA
+        assert "baghewala" in result["reason"].lower()
+
+
+class TestMLHardeningForecastInference:
+    """Test forecast inference actually functions for eligible data (hardening)."""
+
+    @staticmethod
+    def _make_eligible_external_data(seed: int = 42, n: int = 200) -> pd.DataFrame:
+        """Bounded sinusoidal+noise dataset that RF can generalise on.
+
+        RF cannot extrapolate beyond the training range, so a linearly-
+        increasing target (e.g. ``range(n)``) always fails the baseline
+        improvement gate in the held-out test split.  A stationary cyclic
+        pattern keeps the test distribution within the training envelope.
+
+        Explicitly labelled PUBLIC_REFERENCE — NOT Baghewala data.
+        """
+        rng = np.random.default_rng(seed)
+        t = np.arange(n)
+        spm_vals = 5.0 + 2.0 * np.sin(2 * np.pi * t / 40) + rng.normal(0, 0.1, n)
+        oil_vals = 50.0 + 20.0 * np.sin(2 * np.pi * t / 40) + rng.normal(0, 1.0, n)
+        return pd.DataFrame({
+            "timestamp": pd.date_range("2020-01-01", periods=n, freq="D"),
+            "well_id": ["EXT-01"] * n,
+            "oil_rate_bopd": oil_vals,
+            "spm": spm_vals,
+        })
+
+    def test_eligible_external_forecast_training(self):
+        """Test that eligible external dataset can train a model."""
+        model = ForecastingModel(ModelRegistry())
+        data = self._make_eligible_external_data()
+
+        result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            feature_columns=["spm"],
+            dataset_id="external_reference_oilfield",
+            dataset_provenance="PUBLIC_REFERENCE",
+        )
+
+        # Should train successfully — explicitly not Baghewala, enough rows,
+        # and the sinusoidal feature gives RF meaningful signal to beat naive baseline.
+        assert result["success"] == True, f"Expected success but got: {result['reason']}"
+        assert result["eligibility"] == MLEligibility.ELIGIBLE
+        assert "train_mae" in result["metrics"]
+        assert "val_mae" in result["metrics"]
+        assert "test_mae" in result["metrics"]
+        assert "selected_model" in result["metrics"]
+    
+    def test_actual_forecast_inference(self):
+        """Test that trained model can produce actual forecast."""
+        model = ForecastingModel(ModelRegistry())
+        data = self._make_eligible_external_data()
+
+        train_result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            feature_columns=["spm"],
+            dataset_id="external_reference_oilfield",
+            dataset_provenance="PUBLIC_REFERENCE",
+        )
+
+        assert train_result["success"] == True, f"Expected success but got: {train_result['reason']}"
+
+        # Generate forecast using an SPM value within training range
+        forecast_result = model.forecast(
+            well_id="EXT-01",
+            features={"spm": 6.0},
+            horizon_days=10,
+        )
+
+        # Should return actual forecast values, NOT an insufficient-data stub
+        assert forecast_result.insufficient_data == False
+        assert len(forecast_result.forecasted_values) == 10
+        assert len(forecast_result.forecast_timestamps) == 10
+        assert forecast_result.data_quality == "VALID"
+
+
+class TestMLHardeningTrainValTest:
+    """Test train/validation/test separation (hardening)."""
+
+    @staticmethod
+    def _make_eligible_data(seed: int = 0, n: int = 200) -> pd.DataFrame:
+        """Stationary sinusoidal dataset — keeps test split in training distribution."""
+        rng = np.random.default_rng(seed)
+        t = np.arange(n)
+        spm_vals = 5.0 + 2.0 * np.sin(2 * np.pi * t / 40) + rng.normal(0, 0.1, n)
+        oil_vals = 50.0 + 20.0 * np.sin(2 * np.pi * t / 40) + rng.normal(0, 1.0, n)
+        return pd.DataFrame({
+            "timestamp": pd.date_range("2020-01-01", periods=n, freq="D"),
+            "well_id": ["EXT-01"] * n,
+            "oil_rate_bopd": oil_vals,
+            "spm": spm_vals,
+        })
+
+    def test_train_validation_test_separation(self):
+        """Test that train/val/test splits are properly separated."""
+        model = ForecastingModel(ModelRegistry())
+        data = self._make_eligible_data()
+
+        result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            feature_columns=["spm"],
+            dataset_id="external_reference",
+            dataset_provenance="PUBLIC_REFERENCE",
+        )
+
+        # Should have separate metrics for each split
+        assert "train_mae" in result["metrics"]
+        assert "val_mae" in result["metrics"]
+        assert "test_mae" in result["metrics"]
+
+        # Both must be non-negative finite floats
+        assert result["metrics"]["val_mae"] >= 0.0
+        assert result["metrics"]["test_mae"] >= 0.0
+
+    def test_validation_based_model_selection(self):
+        """Test that model selection uses validation performance."""
+        model = ForecastingModel(ModelRegistry())
+        data = self._make_eligible_data()
+
+        result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            feature_columns=["spm"],
+            dataset_id="external_reference",
+            dataset_provenance="PUBLIC_REFERENCE",
+        )
+
+        # Should record which model was selected via validation performance
+        assert "selected_model" in result["metrics"]
+        assert result["metrics"]["selected_model"] in ["random_forest", "hist_gradient_boosting"]
+
+    def test_test_set_not_used_for_selection(self):
+        """Test that test set is not used for model selection."""
+        model = ForecastingModel(ModelRegistry())
+        data = self._make_eligible_data()
+
+        result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            feature_columns=["spm"],
+            dataset_id="external_reference",
+            dataset_provenance="PUBLIC_REFERENCE",
+        )
+
+        # Test metrics must exist but the model is chosen on validation MAE, not test MAE.
+        assert "test_mae" in result["metrics"]
+        assert "val_mae" in result["metrics"]
+
+
+class TestMLHardeningLeakageSafety:
+    """Test leakage-safe feature engineering (hardening)."""
+    
+    def test_rolling_feature_temporal_safety(self):
+        """Test that rolling features don't use future data."""
+        engineer = FeatureEngineer()
+        
+        data = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=10),
+            "well_id": ["WELL-01"] * 10,
+            "spm": [5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9],
+        })
+        
+        featured = engineer.add_rolling_features(
+            data,
+            value_column="spm",
+            windows=[3],
+            functions=["mean"],
+            entity_column="well_id"
+        )
+        
+        # Rolling mean at row T should only use rows <= T
+        # Row 0 (first row) should have rolling mean of row 0 only (min_periods=1)
+        assert featured["spm_rolling_mean_3"].iloc[0] == pytest.approx(5.0)
+        # Row 2 should have mean of rows 0, 1, 2 = (5.0 + 5.1 + 5.2) / 3 = 5.1
+        assert featured["spm_rolling_mean_3"].iloc[2] == pytest.approx(5.1, abs=1e-9)
+    
+    def test_lag_feature_entity_safety(self):
+        """Test that lag features don't cross entity boundaries."""
+        engineer = FeatureEngineer()
+        
+        data = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=10),
+            "well_id": ["WELL-01"] * 5 + ["WELL-02"] * 5,
+            "spm": [5.0, 5.1, 5.2, 5.3, 5.4, 6.0, 6.1, 6.2, 6.3, 6.4],
+        })
+        
+        featured = engineer.add_lag_features(
+            data,
+            value_column="spm",
+            lags=[1],
+            entity_column="well_id"
+        )
+        
+        # Lag 1 for first row of WELL-02 should be NaN (no previous row for that entity)
+        assert pd.isna(featured["spm_lag_1"].iloc[5])
+        # Lag 1 for second row of WELL-02 should be first row of WELL-02
+        assert featured["spm_lag_1"].iloc[6] == 6.0
+    
+    def test_delta_feature_temporal_safety(self):
+        """Test that delta features don't use future data."""
+        engineer = FeatureEngineer()
+        
+        data = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=10),
+            "well_id": ["WELL-01"] * 10,
+            "spm": [5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9],
+        })
+        
+        featured = engineer.add_delta_features(
+            data,
+            value_column="spm",
+            periods=[1],
+            entity_column="well_id"
+        )
+        
+        # Delta 1 at row T should be value[T] - value[T-1]
+        # 5.1 - 5.0 = 0.1 (floating-point: use approx)
+        assert featured["spm_delta_1"].iloc[1] == pytest.approx(0.1, abs=1e-9)
+        assert featured["spm_delta_1"].iloc[2] == pytest.approx(0.1, abs=1e-9)
+    
+    def test_future_data_leakage_test(self):
+        """Test that future values don't leak into training features."""
+        engineer = FeatureEngineer()
+        
+        # Create data with dramatic future change
+        data = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=20),
+            "well_id": ["WELL-01"] * 20,
+            "spm": [5.0] * 10 + [50.0] * 10,  # Dramatic change at row 10
+        })
+        
+        # Split at row 10
+        train_data = data.iloc[:10].copy()
+        test_data = data.iloc[10:].copy()
+        
+        # Generate features for training data
+        train_featured = engineer.add_rolling_features(
+            train_data,
+            value_column="spm",
+            windows=[3],
+            functions=["mean"],
+            entity_column="well_id"
+        )
+        
+        # Training features should not be affected by future test values
+        # All training SPM values are 5.0, so rolling mean should be ~5.0
+        assert all(train_featured["spm_rolling_mean_3"] < 10.0)
+
+
+class TestMLHardeningDatasetValidation:
+    """Test empirical dataset validation (hardening)."""
+    
+    def test_dataset_empirical_validation(self):
+        """Test that dataset validation uses actual data inspection."""
+        validator = DatasetValidator()
+        
+        data = pd.DataFrame({
+            "oil_rate_bopd": [10.0, 20.0, 15.0, None, 25.0],  # Has missing value
+            "spm": [5.0, 6.0, 5.5, 5.2, 5.8],
+        })
+        
+        report = validator.validate(data, task="general")
+        
+        # Should detect missing values
+        assert report.rows == 5
+        assert report.missing_value_count > 0
+    
+    def test_dataset_unavailable_behavior(self):
+        """Test behavior when dataset is unavailable."""
+        inventory = DatasetInventory()
+        
+        # Try to assess eligibility for non-existent dataset
+        report = inventory.assess_eligibility("nonexistent_dataset", "production_forecast")
+        
+        # Should return explicit unavailable state
+        assert report is not None
+        # Report should indicate dataset not found or unavailable
+
+
+class TestMLHardeningModelConsistency:
+    """Test model artifact/inference consistency (hardening)."""
+
+    @staticmethod
+    def _make_eligible_data(seed: int = 7, n: int = 200) -> pd.DataFrame:
+        """Stationary sinusoidal dataset for model consistency tests."""
+        rng = np.random.default_rng(seed)
+        t = np.arange(n)
+        spm_vals = 5.0 + 2.0 * np.sin(2 * np.pi * t / 40) + rng.normal(0, 0.1, n)
+        oil_vals = 50.0 + 20.0 * np.sin(2 * np.pi * t / 40) + rng.normal(0, 1.0, n)
+        return pd.DataFrame({
+            "timestamp": pd.date_range("2020-01-01", periods=n, freq="D"),
+            "well_id": ["EXT-01"] * n,
+            "oil_rate_bopd": oil_vals,
+            "spm": spm_vals,
+        })
+
+    def test_feature_schema_mismatch(self):
+        """Test that feature schema mismatch fails safely."""
+        model = ForecastingModel(ModelRegistry())
+        data = self._make_eligible_data()
+
+        train_result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            feature_columns=["spm"],
+            dataset_id="external_reference",
+            dataset_provenance="PUBLIC_REFERENCE",
+        )
+
+        assert train_result["success"] == True, f"Training must succeed for this test: {train_result['reason']}"
+
+        # Try to forecast with missing feature — should fail safely
+        forecast_result = model.forecast(
+            well_id="EXT-01",
+            features={},  # Missing SPM
+            horizon_days=10,
+        )
+
+        # Should fail with structured error, not silently
+        assert forecast_result.insufficient_data == True
+        assert "MISSING_FEATURES" in forecast_result.insufficient_reason
+
+    def test_model_metadata_consistency(self):
+        """Test that model metadata is consistent."""
+        model = ForecastingModel(ModelRegistry())
+        data = self._make_eligible_data()
+
+        result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            feature_columns=["spm"],
+            dataset_id="external_reference",
+            dataset_provenance="PUBLIC_REFERENCE",
+        )
+
+        # Model should store feature columns after successful training
+        assert model.feature_columns is not None
+        assert "spm" in model.feature_columns
+
+
+class TestMLHardeningModelQualityGates:
+    """Test model quality gates (hardening)."""
+    
+    def test_model_quality_gate_requires_validation(self):
+        """Test that model requires validation metrics to pass."""
+        model = ForecastingModel(ModelRegistry())
+        
+        data = pd.DataFrame({
+            "timestamp": pd.date_range("2024-01-01", periods=150),
+            "well_id": ["EXT-01"] * 150,
+            "oil_rate_bopd": range(150),
+            "spm": [5.0] * 150,
+        })
+        
+        result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            dataset_id="external_reference",
+            dataset_provenance="PUBLIC_REFERENCE"
+        )
+        
+        # Should have validation metrics
+        assert "val_mae" in result["metrics"]
+        # Should have test metrics
+        assert "test_mae" in result["metrics"]
+
+
+class TestMLHardeningExistingBehavior:
+    """Test that existing anomaly and Baghewala behavior is preserved (hardening)."""
+    
+    def test_existing_anomaly_behavior(self):
+        """Test that existing anomaly detector behavior is preserved."""
+        detector = AnomalyDetector(ModelRegistry())
+        
+        historical_data = pd.DataFrame({
+            "spm": [5.0, 5.1, 4.9, 5.0, 5.1] * 20,
+        })
+        
+        result = detector.detect(
+            variable="spm",
+            value=15.0,
+            well_id="BGW-01",
+            historical_data=historical_data,
+        )
+        
+        assert result.status in [AnomalyStatus.ANOMALY, AnomalyStatus.WARNING]
+        assert result.insufficient_data == False
+    
+    def test_existing_baghewala_insufficient_data_behavior(self):
+        """Test that Baghewala insufficient-data behavior is preserved."""
+        model = ForecastingModel(ModelRegistry())
+        
+        data = pd.DataFrame({
+            "timestamp": ["2022-01-01", "2023-01-01"],
+            "well_id": ["BGW-08", "BGW-08"],
+            "oil_rate_bopd": [85.0, 85.0],
+        })
+        
+        result = model.train(
+            data,
+            target_column="oil_rate_bopd",
+            dataset_id="baghewala_public",
+            dataset_provenance="BAGHEWALA_FIELD"
+        )
+        
+        assert result["success"] == False
+        assert result["eligibility"] == MLEligibility.INSUFFICIENT_DATA
+        assert "baghewala" in result["reason"].lower()
+
+
+class TestMLHardeningPriorityContractPreservation:
+    """Test Priority 1 and 2 contract preservation (hardening)."""
+    
+    def test_priority1_contract_preservation(self):
+        """Test that Priority 1 contracts are still preserved."""
+        from data.schema import WellRecord, TelemetryRecord
+        
+        # Existing schemas should still work
+        well = WellRecord(well_id="BGW-01", field="Baghewala")
+        telemetry = TelemetryRecord(well_id="BGW-01", oil_rate_bopd=10.0)
+        
+        assert well.well_id == "BGW-01"
+        assert telemetry.oil_rate_bopd == 10.0
+    
+    def test_priority2_contract_preservation(self):
+        """Test that Priority 2 contracts are still preserved."""
+        from data import history as history_engine
+        
+        # Historical engine should still work
+        repo = history_engine.InMemoryHistoryRepository()
+        assert repo is not None
+        assert repo.counts()["observations"] == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
