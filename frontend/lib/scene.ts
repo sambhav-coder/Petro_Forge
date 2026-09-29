@@ -23,6 +23,16 @@ export const COLORS = {
   critical: "#fb7185",
   healthy: "#34d399",
   grid: "#1e2a44",
+  /* PetroForge surface environment: arid Rajasthan-inspired tones */
+  soil: "#6b4f33",
+  soilDark: "#3a2a1a",
+  sand: "#c9a06a",
+  gravel: "#4a4238",
+  grass: "#5a7a45",
+  grassDark: "#3d5a2e",
+  rock: "#6e6259",
+  leaf: "#4ade80",
+  forest: "#1d3a2a",
 } as const;
 
 /* Relative scene layout (prototype units, NOT field dimensions). */

@@ -144,11 +144,7 @@ export default function WellAssembly({
 
   return (
     <group position={[x, 0, 0]} ref={root}>
-      {/* Concrete pad */}
-      <mesh position={[2.2, -0.1, 0]} receiveShadow>
-        <boxGeometry args={[10, 0.5, 6.4]} />
-        <meshStandardMaterial color="#2a2f3a" roughness={1} />
-      </mesh>
+      {/* Equipment sits on the compacted gravel pad built by Terrain. */}
 
       {/* Well label */}
       <Html position={[0, 8.2, 0]} center>

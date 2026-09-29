@@ -354,7 +354,7 @@ export default function Inspector({
                 <button
                   onClick={onRunOptimize}
                   disabled={optLoading}
-                  className="px-3 py-2 rounded-lg bg-amber-500 text-slate-900 text-xs font-bold disabled:opacity-40"
+                  className="px-3 py-2 rounded-lg bg-gradient-to-r from-forest-700 to-leaf text-white text-xs font-bold disabled:opacity-40"
                 >
                   {optLoading ? "Evaluating 243 scenarios…" : "RUN OPTIMIZATION"}
                 </button>
