@@ -1,14 +1,18 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, apiBase } from "@/lib/api";
+import { fmt } from "@/lib/scene";
 import type {
+  Alert,
   CameraPreset,
   DataSummary,
+  FieldOverview,
   IsolatableKind,
   OptimizeResponse,
   SceneSelection,
+  StreamReading,
   TwinSnapshot,
   ViewMode,
   WellTelemetry,
@@ -16,6 +20,7 @@ import type {
 } from "@/lib/types";
 import Inspector from "@/components/Inspector";
 import Logo from "@/components/Logo";
+import AlertsDrawer from "@/components/AlertsDrawer";
 
 const FieldScene = dynamic(() => import("@/components/FieldScene"), { ssr: false });
 
@@ -35,12 +40,34 @@ export default function Home() {
   const [optLoading, setOptLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [dataSummary, setDataSummary] = useState<DataSummary | null>(null);
+  // Block 4: real-time monitoring
+  const [overview, setOverview] = useState<FieldOverview | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [liveBusy, setLiveBusy] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [lastEvent, setLastEvent] = useState<string | null>(null);
+
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selectedWellId;
+  const knownWells = useRef<Set<string>>(new Set());
 
   const loadWell = useCallback(async (id: string) => {
     const [w, t] = await Promise.all([api.well(id), api.twin(id)]);
     setTelemetries((p) => ({ ...p, [id]: w }));
     setTwins((p) => ({ ...p, [id]: t }));
     return { w, t };
+  }, []);
+
+  const loadFieldStatus = useCallback(async () => {
+    try {
+      const [ov, al, wl] = await Promise.all([api.overview(), api.alerts(60), api.wells()]);
+      setOverview(ov);
+      setAlerts(al.alerts);
+      setWells(wl); // keeps phase labels in the well picker current while live
+    } catch {
+      /* status strip is best-effort */
+    }
   }, []);
 
   const refresh = useCallback(async () => {
@@ -50,8 +77,10 @@ export default function Home() {
       await api.health();
       setConnected(true);
       api.dataSummary().then(setDataSummary).catch(() => setDataSummary(null));
+      loadFieldStatus();
       const wl = await api.wells();
       setWells(wl);
+      knownWells.current = new Set(wl.wells.map((w) => w.well_id));
       if (wl.wells.length > 0) {
         const id =
           selectedWellId && wl.wells.some((w) => w.well_id === selectedWellId)
@@ -87,12 +116,48 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [selectedWellId]);
+  }, [selectedWellId, loadFieldStatus]);
 
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* Server-Sent Events: every ingest (API or live field) pushes a reading. */
+  useEffect(() => {
+    if (!connected) return;
+    const es = new EventSource(api.streamUrl());
+    let statusTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleStatus = () => {
+      if (statusTimer) return;
+      statusTimer = setTimeout(() => {
+        statusTimer = null;
+        loadFieldStatus();
+      }, 800);
+    };
+    es.addEventListener("reading", (ev) => {
+      const r = JSON.parse((ev as MessageEvent).data) as StreamReading;
+      setLastEvent(r.timestamp);
+      if (!knownWells.current.has(r.well_id)) {
+        knownWells.current.add(r.well_id);
+        api.wells().then(setWells).catch(() => undefined);
+      }
+      api.twin(r.well_id).then((t) => setTwins((p) => ({ ...p, [r.well_id]: t }))).catch(() => undefined);
+      if (r.well_id === selectedRef.current) {
+        api.well(r.well_id).then((w) => setTelemetries((p) => ({ ...p, [r.well_id]: w }))).catch(() => undefined);
+        setRefreshKey((k) => k + 1);
+      }
+      if (r.alerts.length > 0) setAlerts((prev) => [...r.alerts.slice().reverse(), ...prev].slice(0, 60));
+      scheduleStatus();
+    });
+    es.onerror = () => {
+      /* EventSource reconnects automatically */
+    };
+    return () => {
+      es.close();
+      if (statusTimer) clearTimeout(statusTimer);
+    };
+  }, [connected, loadFieldStatus]);
 
   const pickWell = async (id: string) => {
     setSelectedWellId(id);
@@ -118,6 +183,37 @@ export default function Home() {
     }
   };
 
+  const seedField = async () => {
+    setSeeding(true);
+    try {
+      await api.seedField(45);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Field seed failed");
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  const toggleLive = async () => {
+    setLiveBusy(true);
+    try {
+      const st = overview?.live.running ? await api.liveStop() : await api.liveStart(2);
+      setOverview((o) => (o ? { ...o, live: st } : o));
+      loadFieldStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Live toggle failed");
+    } finally {
+      setLiveBusy(false);
+    }
+  };
+
+  const ackAlert = async (id: string) => {
+    await api.ackAlert(id).catch(() => undefined);
+    setAlerts((prev) => prev.map((a) => (a.alert_id === id ? { ...a, acknowledged: true } : a)));
+    loadFieldStatus();
+  };
+
   const runOptimize = async () => {
     if (!selectedWellId) return;
     setOptLoading(true);
@@ -133,6 +229,8 @@ export default function Home() {
 
   const twin = selectedWellId ? (twins[selectedWellId] ?? null) : null;
   const telemetry = selectedWellId ? (telemetries[selectedWellId] ?? null) : null;
+  const live = overview?.live.running ?? false;
+  const unacked = alerts.filter((a) => !a.acknowledged).length;
   const presets: { id: CameraPreset; label: string }[] = [
     { id: "FIELD", label: "▦ FIELD" },
     { id: "WELL", label: "◉ WELL" },
@@ -145,7 +243,7 @@ export default function Home() {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#070b14]">
       {/* Top bar */}
-      <header className="glass border-b border-slate-700/40 px-4 py-2.5 flex flex-wrap items-center gap-3 z-10">
+      <header className="glass border-b border-slate-700/40 px-4 py-2.5 flex flex-wrap items-center gap-3 z-20">
         <a href="/" className="flex items-center gap-2.5" title="Back to PetroForge home">
           <Logo size={36} />
           <div>
@@ -165,6 +263,29 @@ export default function Home() {
             </div>
           </div>
         </a>
+
+        {/* Field KPI strip */}
+        {overview && overview.total_wells > 0 && (
+          <div className="hidden lg:flex items-center gap-3 ml-2 text-[11px] font-mono">
+            <div title="Sum of measured oil rate across producing wells">
+              <span className="text-slate-500">FIELD </span>
+              <span className="text-amber-200 font-bold">{fmt(overview.field_oil_rate_bopd)}</span>
+              <span className="text-slate-500"> bopd</span>
+            </div>
+            <div title="Calibrated digital-twin estimate for the same wells">
+              <span className="text-slate-500">TWIN </span>
+              <span className="text-teal-200">{fmt(overview.field_calibrated_twin_oil_bopd)}</span>
+            </div>
+            <div className="flex gap-1">
+              {Object.entries(overview.by_phase).map(([ph, n]) => (
+                <span key={ph} className="px-1.5 py-0.5 rounded bg-slate-800/70 border border-slate-700/60 text-slate-300">
+                  {ph.slice(0, 4)}×{n}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex-1" />
         <select
           value={selectedWellId ?? ""}
@@ -178,6 +299,44 @@ export default function Home() {
           ))}
           {(!wells || wells.wells.length === 0) && <option value="">— no wells —</option>}
         </select>
+
+        <button
+          onClick={toggleLive}
+          disabled={liveBusy || !connected || !wells || wells.wells.length === 0}
+          title="Stream synthetic Baghewala field readings through the real ingest pipeline"
+          className={`text-[11px] font-mono font-bold px-2.5 py-1.5 rounded-lg border disabled:opacity-40 ${
+            live
+              ? "bg-rose-500/15 text-rose-200 border-rose-400/50"
+              : "bg-slate-700/70 text-slate-200 border-slate-600/60 hover:border-teal-300/50"
+          }`}
+        >
+          {live ? "● LIVE" : "▶ GO LIVE"}
+        </button>
+
+        <div className="relative">
+          <button
+            onClick={() => setAlertsOpen((o) => !o)}
+            className={`text-[11px] font-mono font-bold px-2.5 py-1.5 rounded-lg border ${
+              unacked > 0
+                ? "bg-amber-500/15 text-amber-200 border-amber-400/50"
+                : "bg-slate-700/70 text-slate-300 border-slate-600/60"
+            }`}
+          >
+            ⚠ ALERTS {unacked > 0 && <span className="ml-1 px-1 rounded bg-amber-400 text-slate-900">{unacked}</span>}
+          </button>
+          {alertsOpen && (
+            <AlertsDrawer
+              alerts={alerts}
+              onAck={ackAlert}
+              onPick={(id) => {
+                pickWell(id);
+                setAlertsOpen(false);
+              }}
+              onClose={() => setAlertsOpen(false)}
+            />
+          )}
+        </div>
+
         <div className="flex items-center gap-1.5 text-[11px] font-mono">
           <span
             className={`h-2 w-2 rounded-full ${
@@ -185,7 +344,7 @@ export default function Home() {
             }`}
           />
           <span className={connected ? "text-emerald-300" : "text-slate-400"}>
-            {connected === null ? "CHECKING…" : connected ? "BACKEND CONNECTED" : "BACKEND OFFLINE"}
+            {connected === null ? "CHECKING…" : connected ? "BACKEND" : "OFFLINE"}
           </span>
         </div>
         <button
@@ -223,16 +382,28 @@ export default function Home() {
                 <div className="glass rounded-2xl p-8 text-center space-y-3 max-w-md">
                   <div className="font-bold">No well telemetry available.</div>
                   <p className="text-xs text-slate-400">
-                    Ingest a well via the API, or load the BGW-DEMO baseline through the
-                    real ingest endpoint.
+                    Load the synthetic Baghewala field (4 wells, 45 days of CSS cycles with injected
+                    faults) through the real ingest pipeline, or a single BGW-DEMO baseline reading.
                   </p>
-                  <button
-                    onClick={seedDemo}
-                    disabled={seeding || connected === false}
-                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-forest-700 to-leaf text-white text-xs font-bold disabled:opacity-40"
-                  >
-                    {seeding ? "Loading…" : "Load BGW-DEMO baseline"}
-                  </button>
+                  <div className="flex gap-2 justify-center">
+                    <button
+                      onClick={seedField}
+                      disabled={seeding || connected === false}
+                      className="px-4 py-2 rounded-lg bg-gradient-to-r from-forest-700 to-leaf text-white text-xs font-bold disabled:opacity-40"
+                    >
+                      {seeding ? "Loading…" : "Load synthetic field"}
+                    </button>
+                    <button
+                      onClick={seedDemo}
+                      disabled={seeding || connected === false}
+                      className="px-4 py-2 rounded-lg bg-slate-700/80 border border-slate-600/60 text-slate-200 text-xs font-bold disabled:opacity-40"
+                    >
+                      BGW-DEMO only
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    Provenance: SYNTHETIC_BAGHEWALA — no field data is claimed.
+                  </p>
                 </div>
               </div>
             )
@@ -244,8 +415,14 @@ export default function Home() {
           )}
           {/* Viewport overlay: last telemetry */}
           {telemetry && (
-            <div className="absolute top-3 left-3 text-[10px] font-mono text-slate-400 glass rounded-lg px-2.5 py-1.5 pointer-events-none">
-              {telemetry.well_id} · last telemetry {telemetry.timestamp ?? "—"}
+            <div className="absolute top-3 left-3 text-[10px] font-mono text-slate-400 glass rounded-lg px-2.5 py-1.5 pointer-events-none space-y-0.5">
+              <div>
+                {telemetry.well_id} · {telemetry.css_phase}
+                {telemetry.css_phase === "PRODUCTION" && ` day ${fmt(telemetry.days_in_phase, 1)}`} · measured{" "}
+                {fmt(telemetry.oil_rate_bopd)} bopd
+              </div>
+              <div>last telemetry {telemetry.timestamp ?? "—"}</div>
+              {live && lastEvent && <div className="text-rose-300">● streaming · sim clock {lastEvent.slice(0, 16).replace("T", " ")}</div>}
             </div>
           )}
         </div>
@@ -261,6 +438,7 @@ export default function Home() {
             isolated={isolated}
             onIsolate={setIsolated}
             onShowAll={() => setIsolated(null)}
+            refreshKey={refreshKey}
           />
         </div>
       </div>
@@ -342,7 +520,7 @@ export default function Home() {
         </div>
         <div className="flex-1" />
         <div className="text-[10px] font-mono text-slate-500">
-          Prototype visualization · relative units · data: local prototype telemetry
+          Prototype visualization · relative units · {live ? "live synthetic field" : "local prototype telemetry"}
         </div>
       </footer>
     </div>

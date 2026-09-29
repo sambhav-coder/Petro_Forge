@@ -28,11 +28,12 @@ DOCUMENTATION (prototype/demo assumptions)
 - WHY GRID SEARCH: transparent, deterministic, dependency-free,
   millisecond-scale for this space, and every candidate is explainable
   — appropriate for a hackathon demonstration. No scipy required.
-- VFD NOTE: vfd_percent is EXCLUDED from scenario/decision variables
-  because no Block 2 physics function consumes it (SRP speed is
-  represented by SPM, which the pump model uses). Adding it as a knob
-  with no influence would be a fake control. steam_injection_pressure
-  IS included: it genuinely drives heating_intensity in twin_physics.
+- VFD (Block 4): the VFD is the actuator that sets SPM. The grid still
+  searches SPM (the variable the pump physics consumes) and every
+  candidate reports the VFD setpoint that delivers it
+  (twin_physics.vfd_for_spm), so the recommendation is directly
+  actionable at the drive. steam_injection_pressure is searched too: it
+  genuinely drives heating_intensity in twin_physics.
 - SIMULATION vs FIELD OPERATION: simulate/optimize answer
   "what would the prototype model predict if...". They are engineering
   estimates from an uncalibrated demonstration model, NOT field
@@ -217,7 +218,10 @@ def optimize_well(state, grid: dict = None) -> dict:
         hypo = apply_scenario(state, overrides)
         snap = tp.twin_snapshot(hypo)
         evaluated.append(
-            {"grid_index": idx, "inputs": dict(overrides, css_phase=phase), "snapshot": snap}
+            {"grid_index": idx,
+             "inputs": dict(overrides, css_phase=phase,
+                            vfd_setpoint_percent=tp.vfd_for_spm(overrides["spm"])),
+             "snapshot": snap}
         )
 
     score_candidates(evaluated)
@@ -295,6 +299,12 @@ def build_reasons(current: dict, recommended: dict) -> list:
             f"{recommended['total_energy_kwh']:.0f} kWh)."
         )
 
+    if r_spm != c_spm:
+        reasons.append(
+            f"Set the VFD to {tp.vfd_for_spm(r_spm):.0f}% (from {tp.vfd_for_spm(c_spm):.0f}%) to deliver "
+            f"{r_spm:.1f} SPM at the prototype drive ratio of {tp.SPM_AT_FULL_VFD:.0f} SPM at full speed."
+        )
+
     c_stm, r_stm = current["steam_volume_t"], recommended["steam_volume_t"]
     if r_stm > c_stm:
         reasons.append(
@@ -365,6 +375,7 @@ def assumption_lines(grid: dict) -> list:
         f"Objective weights (prototype demonstration, not Oil India provided): "
         f"production {W_PROD}, SOR {W_SOR}, energy {W_ENERGY}, risk {W_RISK}",
         "Grid search over Block 2 prototype physics: transparent, deterministic, no ML.",
-        "vfd_percent excluded: no Block 2 physics function consumes it (SPM is the speed variable).",
+        f"VFD setpoint derived from SPM: SPM = {tp.SPM_AT_FULL_VFD:.0f} x VFD% / 100 (prototype drive ratio).",
+        "Oil rate = liquid rate x (1 - water cut); the pump lifts total liquid.",
         tp.PROTOTYPE_DISCLAIMER,
     ]

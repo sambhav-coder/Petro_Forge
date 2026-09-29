@@ -11,35 +11,10 @@ import type {
   TwinSnapshot,
   WellTelemetry,
 } from "@/lib/types";
+import { Pill, Rows } from "./ui";
+import { AnalyticsPanel, CyclePanel, MlPanel, SrpPanel, WhatIfPanel } from "./TwinPanels";
 
-type Tab = "OVERVIEW" | "TELEMETRY" | "PHYSICS" | "ANALYTICS" | "ML" | "OPTIMIZATION";
-
-function Pill({ level }: { level: string }) {
-  const cls =
-    level === "LOW" || level === "NOMINAL"
-      ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
-      : level === "MODERATE" || level === "ELEVATED"
-        ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-        : "bg-rose-500/15 text-rose-300 border-rose-500/30";
-  return (
-    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border font-mono ${cls}`}>
-      {level}
-    </span>
-  );
-}
-
-function Rows({ rows }: { rows: [string, string][] }) {
-  return (
-    <div className="text-xs font-mono space-y-1">
-      {rows.map(([k, v]) => (
-        <div key={k} className="flex justify-between gap-2">
-          <span className="text-slate-400">{k}</span>
-          <span className="text-slate-100 text-right">{v}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
+type Tab = "OVERVIEW" | "WHAT-IF" | "CYCLE" | "SRP" | "ANALYTICS" | "ML" | "OPTIMIZATION" | "PHYSICS" | "TELEMETRY";
 
 /* Per-object sections: future components expose data here without
    rewriting the inspector. Values come from the backend only. */
@@ -142,6 +117,7 @@ export default function Inspector({
   isolated,
   onIsolate,
   onShowAll,
+  refreshKey,
 }: {
   selection: SceneSelection | null;
   wellId: string | null;
@@ -153,12 +129,13 @@ export default function Inspector({
   isolated: IsolatableKind | null;
   onIsolate: (kind: IsolatableKind) => void;
   onShowAll: () => void;
+  refreshKey: number;
 }) {
   const [tab, setTab] = useState<Tab>("OVERVIEW");
-  const tabs: Tab[] = ["OVERVIEW", "TELEMETRY", "PHYSICS", "ANALYTICS", "ML", "OPTIMIZATION"];
+  const tabs: Tab[] = ["OVERVIEW", "WHAT-IF", "CYCLE", "SRP", "ANALYTICS", "ML", "OPTIMIZATION", "PHYSICS", "TELEMETRY"];
 
   return (
-    <aside className="glass rounded-none border-l border-slate-700/40 w-[380px] shrink-0 flex flex-col min-h-0">
+    <aside className="glass rounded-none border-l border-slate-700/40 w-[400px] shrink-0 flex flex-col min-h-0">
       <div className="px-4 pt-4 pb-2">
         {!selection || !wellId ? (
           <div>
@@ -234,8 +211,16 @@ export default function Inspector({
                   <span className="text-xs text-slate-400 font-mono">STATUS</span>
                   <Pill level={twin.overall_engineering_status} />
                   <span className="text-xs text-slate-400 font-mono ml-2">CSS</span>
-                  <span className="text-xs font-mono text-amber-200">{twin.css_phase}</span>
+                  <span className="text-xs font-mono text-amber-200">
+                    {twin.css_phase}
+                    {twin.css_phase === "PRODUCTION" && twin.days_in_phase > 0 && ` · day ${fmt(twin.days_in_phase, 1)}`}
+                  </span>
                 </div>
+                {(twin.css_phase === "INJECTION" || twin.css_phase === "SOAK") && (
+                  <p className="text-[10px] text-amber-200/80 font-mono">
+                    Well shut in for {twin.css_phase.toLowerCase()}: figures below are the twin&apos;s production capability.
+                  </p>
+                )}
                 {selection && selection.kind !== "well" && (
                   <section>
                     <h4 className="text-[11px] font-bold text-teal-200 mb-1">
@@ -253,7 +238,7 @@ export default function Inspector({
                       ["Soak", `${fmt(telemetry.soak_time_h, 0)} h`],
                       ["SPM", fmt(telemetry.spm)],
                       ["Stroke", `${fmt(telemetry.stroke_in, 0)} in`],
-                      ["VFD", `${fmt(telemetry.vfd_percent)} %`],
+                      ["VFD", `${fmt(telemetry.vfd_percent)} % (twin setpoint ${fmt(twin.vfd_setpoint_percent, 0)} %)`],
                     ]}
                   />
                 </section>
@@ -261,7 +246,10 @@ export default function Inspector({
                   <h4 className="text-[11px] font-bold text-slate-300 mb-1">TWIN SNAPSHOT</h4>
                   <Rows
                     rows={[
-                      ["Production", `${fmt(twin.estimated_oil_production_bopd)} BOPD`],
+                      ["Measured oil", `${fmt(telemetry.oil_rate_bopd)} BOPD`],
+                      ["Twin oil (uncalibrated)", `${fmt(twin.estimated_oil_production_bopd)} BOPD`],
+                      ["Liquid / water cut", `${fmt(twin.estimated_liquid_production_bpd)} bpd · ${fmt(twin.water_cut_percent, 0)} %`],
+                      ["Pump fillage", fmt(twin.estimated_pump_fillage, 2)],
                       ["SOR (prototype t/bbl)", fmt(twin.steam_oil_ratio_t_per_bbl, 4)],
                       ["Energy", `${fmt(twin.total_energy_kwh, 0)} kWh`],
                     ]}
@@ -303,6 +291,7 @@ export default function Inspector({
                   ["VFD", `${fmt(telemetry.vfd_percent)} %`],
                   ["Water cut", `${fmt(telemetry.water_cut_percent)} %`],
                   ["API gravity", `${fmt(telemetry.api_gravity)}°`],
+                  ["Days in phase", fmt(telemetry.days_in_phase, 1)],
                   ["Timestamp", telemetry.timestamp ?? "—"],
                 ]}
               />
@@ -316,7 +305,10 @@ export default function Inspector({
                     ["Viscosity", `${fmt(twin.estimated_viscosity_cp)} cP`],
                     ["Mobility", fmt(twin.mobility_factor, 3)],
                     ["Inflow", `${fmt(twin.estimated_reservoir_inflow_bopd)} BOPD`],
-                    ["Pump capacity", `${fmt(twin.pump_capacity_bopd)} BOPD`],
+                    ["Pump capacity", `${fmt(twin.pump_capacity_bopd)} BPD`],
+                    ["Liquid rate", `${fmt(twin.estimated_liquid_production_bpd)} BPD`],
+                    ["Oil (after water cut)", `${fmt(twin.estimated_oil_production_bopd)} BOPD`],
+                    ["Pump fillage (est.)", fmt(twin.estimated_pump_fillage, 2)],
                     ["Limiting", twin.production_limiting_factor],
                     ["SOR", `${fmt(twin.steam_oil_ratio_t_per_bbl, 4)} t/bbl (${twin.sor_status})`],
                     ["Energy", `${fmt(twin.total_energy_kwh, 0)} kWh`],
@@ -333,21 +325,11 @@ export default function Inspector({
               </div>
             )}
 
-            {tab === "ANALYTICS" && (
-              <div className="text-xs text-slate-400 space-y-2">
-                <Pill level="MODERATE" />
-                <p className="font-mono">Coming in Phase 2 — Historical / Public Data Platform.</p>
-                <p>No historical analytics exist in this baseline; nothing is fabricated here.</p>
-              </div>
-            )}
-
-            {tab === "ML" && (
-              <div className="text-xs text-slate-400 space-y-2">
-                <Pill level="MODERATE" />
-                <p className="font-mono">Coming in Phase 3 — ML Intelligence.</p>
-                <p>No trained model exists in this baseline; risk values are deterministic engineering proxies.</p>
-              </div>
-            )}
+            {tab === "WHAT-IF" && wellId && <WhatIfPanel wellId={wellId} twin={twin} />}
+            {tab === "CYCLE" && wellId && <CyclePanel wellId={wellId} refreshKey={refreshKey} />}
+            {tab === "SRP" && wellId && <SrpPanel wellId={wellId} refreshKey={refreshKey} />}
+            {tab === "ANALYTICS" && wellId && <AnalyticsPanel wellId={wellId} refreshKey={refreshKey} />}
+            {tab === "ML" && wellId && <MlPanel wellId={wellId} refreshKey={refreshKey} />}
 
             {tab === "OPTIMIZATION" && (
               <div className="space-y-3">
@@ -368,6 +350,12 @@ export default function Inspector({
                     <Rows
                       rows={[
                         ["Recommended production", `${fmt(opt.recommended.estimated_oil_production_bopd)} BOPD`],
+                        ["Change vs current", `${opt.delta.production_delta_bopd >= 0 ? "+" : ""}${fmt(opt.delta.production_delta_bopd)} BOPD`],
+                        [
+                          "Settings",
+                          `${fmt(opt.recommended.inputs.steam_volume_t, 0)} t · ${fmt(opt.recommended.inputs.soak_time_h, 0)} h · ${fmt(opt.recommended.inputs.spm)} SPM`,
+                        ],
+                        ["VFD setpoint", `${fmt(opt.recommended.inputs.vfd_setpoint_percent, 0)} %`],
                         ["Objective score", fmt(opt.objective_score, 4)],
                         ["Scenarios", `${opt.scenarios_evaluated}`],
                         ["Status", opt.recommended.overall_engineering_status],
@@ -377,7 +365,7 @@ export default function Inspector({
                       <div className="text-[11px] font-bold text-slate-300 mb-1">TOP SCENARIOS</div>
                       {opt.top_scenarios.map((s) => (
                         <div key={s.rank} className="font-mono text-[11px] flex justify-between text-slate-300">
-                          <span>#{s.rank} {fmt(s.inputs.steam_volume_t, 0)}t/{fmt(s.inputs.soak_time_h, 0)}h/{fmt(s.inputs.spm)}spm</span>
+                          <span>#{s.rank} {fmt(s.inputs.steam_volume_t, 0)}t/{fmt(s.inputs.soak_time_h, 0)}h/{fmt(s.inputs.spm)}spm/{fmt(s.inputs.vfd_setpoint_percent, 0)}%VFD</span>
                           <span>{fmt(s.estimated_oil_production_bopd)} bopd · {fmt(s.score, 3)}</span>
                         </div>
                       ))}

@@ -202,8 +202,16 @@ def test_snapshot_has_no_nan_or_infinity():
         snap["steam_energy_kwh"], snap["pumping_energy_kwh"], snap["total_energy_kwh"],
     ]
     assert all(math.isfinite(v) for v in numeric)
-    assert snap["estimated_oil_production_bopd"] == pytest.approx(
+    # The pump lifts total liquid; oil is the non-water share of it (Block 4).
+    assert snap["estimated_liquid_production_bpd"] == pytest.approx(
         min(snap["estimated_reservoir_inflow_bopd"], snap["pump_capacity_bopd"])
+    )
+    assert snap["estimated_oil_production_bopd"] == pytest.approx(
+        snap["estimated_liquid_production_bpd"] * (1 - snap["water_cut_percent"] / 100.0), abs=1e-3
+    )
+    dry = tp.twin_snapshot(twin_state(water_cut_percent=0.0))
+    assert dry["estimated_oil_production_bopd"] == pytest.approx(
+        min(dry["estimated_reservoir_inflow_bopd"], dry["pump_capacity_bopd"])
     )
 
 

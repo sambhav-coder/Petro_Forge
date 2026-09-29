@@ -16,26 +16,40 @@ BLOCK 3: what-if simulation + joint CSSxSRP grid optimization
 excluded from scenario/decision variables: no Block 2 physics function
 consumes it (SPM is the SRP speed variable).
 
-Explicitly NOT implemented in these blocks (see later blocks):
-ML, failure-probability prediction, persistent database, auth,
-frontend redesign, field control.
+BLOCK 4: CSS cycle simulation + cut-off planning (css_cycle.py), synthetic
+SRP dynamometer card (srp_dynacard.py), per-well history with twin
+auto-calibration / anomaly detection / decline forecast (analytics.py),
+failure-probability models trained on a documented synthetic hazard model
+(ml_models.py), and real-time monitoring: live synthetic field
+(live_field.py), Server-Sent Events stream, and alerts.
+
+Explicitly NOT implemented: persistent database, auth, field control.
+Nothing here issues commands to equipment.
 
 Validation ranges below are INPUT-SAFETY ranges only. They are not
 field-calibrated Baghewala limits.
 """
 
+from collections import deque
 from enum import Enum
+import asyncio
 import datetime
 import hashlib
 import json
 import os
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Annotated, Any, Dict, List, Optional
 import uvicorn
 
+import analytics
+import css_cycle
+import live_field
+import ml_models
+import srp_dynacard
 import twin_physics
 import twin_optimize
 
@@ -45,10 +59,12 @@ from data.provenance import ProvenanceClass
 from data.repository import InMemoryRepository
 
 
+APP_VERSION = "4.0.0-block4"
+
 app = FastAPI(
     title="SIH26120 - Digital Twin for Well-to-Surface Optimization of Cyclic Steam Stimulation (CSS) and Sucker Rod Pump (SRP) Operations for Heavy Oil Wells of Baghewala Field.",
-    description="Well-to-surface Digital Twin for Oil India Limited Baghewala heavy-oil wells (CSS + SRP). Block 3: what-if simulation and joint CSSxSRP optimization over deterministic prototype physics.",
-    version="3.2.0-block3",
+    description="Well-to-surface Digital Twin for Oil India Limited Baghewala heavy-oil wells (CSS + SRP). Block 4: CSS cycle planning, SRP dynamometer card, predictive analytics, failure-probability models and real-time monitoring over deterministic prototype physics.",
+    version=APP_VERSION,
 )
 
 app.add_middleware(
@@ -103,6 +119,9 @@ class WellTelemetry(BaseModel):
     # Optional produced-fluids state
     water_cut_percent: float = Field(default=0.0, ge=0.0, le=100.0)
 
+    # Optional elapsed time in the current CSS phase (drives production-phase cooling).
+    days_in_phase: float = Field(default=0.0, ge=0.0, le=365.0)
+
 
 class TelemetryIngestResponse(BaseModel):
     status: str
@@ -150,6 +169,12 @@ class TwinSnapshotResponse(BaseModel):
     pump_theoretical_capacity_bopd: float
     pump_capacity_bopd: float
     estimated_oil_production_bopd: float
+    estimated_liquid_production_bpd: float
+    estimated_water_production_bwpd: float
+    water_cut_percent: float
+    estimated_pump_fillage: float
+    vfd_setpoint_percent: float
+    days_in_phase: float
     production_limiting_factor: str
     steam_volume_t: float
     evaluation_window_days: float
@@ -175,8 +200,9 @@ TelemetryIngestResponse.model_rebuild()
 class ScenarioOverrides(BaseModel):
     """What-if overrides. Every field optional; omitted fields keep current values.
 
-    vfd_percent is intentionally absent: no Block 2 physics function
-    consumes it, so exposing it would be a fake control.
+    vfd_percent is the drive setting that delivers SPM
+    (twin_physics.spm_for_vfd). When given without spm it sets SPM; when
+    both are given, spm wins and the VFD setpoint is re-derived from it.
     """
 
     steam_volume_t: Optional[float] = Field(default=None, ge=0.0, le=100000.0)
@@ -185,6 +211,9 @@ class ScenarioOverrides(BaseModel):
     spm: Optional[float] = Field(default=None, ge=0.0, le=20.0)
     stroke_in: Optional[float] = Field(default=None, ge=0.0, le=300.0)
     css_phase: Optional[CSSPhase] = None
+    vfd_percent: Optional[float] = Field(default=None, ge=0.0, le=100.0)
+    water_cut_percent: Optional[float] = Field(default=None, ge=0.0, le=100.0)
+    days_in_phase: Optional[float] = Field(default=None, ge=0.0, le=365.0)
 
 
 class ScenarioApplied(BaseModel):
@@ -194,6 +223,7 @@ class ScenarioApplied(BaseModel):
     spm: float
     stroke_in: float
     css_phase: str
+    vfd_setpoint_percent: Optional[float] = None
 
 
 class GridConfig(BaseModel):
@@ -336,13 +366,174 @@ def _well_summary(well_id: str, record: WellTelemetry) -> Dict:
     }
 
 
+# ---------------- Block 4 stores (in-memory) ----------------
+HISTORY_MAX = 720
+HISTORY: Dict[str, deque] = {}          # per-well measured + twin time series
+ALERTS: deque = deque(maxlen=200)       # newest last
+_ACTIVE_ALERT_KEYS: Dict[tuple, str] = {}  # (well_id, type) -> alert_id while condition persists
+_ALERT_SEQ = 0
+_SUBSCRIBERS: List[asyncio.Queue] = []  # SSE listeners
+LIVE: Dict[str, Any] = {"sim": None, "task": None, "interval_s": 2.0}
+
+ML_ALERT_PROB = ml_models.PROB_HIGH
+
+
 def reset_block1_state() -> None:
     """Test helper: clear in-memory wells, audit log, and deterministic counters."""
-    global _EVENT_SEQ, _DISPATCH_SEQ
+    global _EVENT_SEQ, _DISPATCH_SEQ, _ALERT_SEQ
     WELL_STORE.clear()
     AUDIT_LOGS.clear()
     _EVENT_SEQ = 0
     _DISPATCH_SEQ = 0
+    HISTORY.clear()
+    ALERTS.clear()
+    _ACTIVE_ALERT_KEYS.clear()
+    _ALERT_SEQ = 0
+    _stop_live()
+    LIVE["sim"] = None
+
+
+def _broadcast(event: Dict) -> None:
+    for q in list(_SUBSCRIBERS):
+        try:
+            q.put_nowait(event)
+        except (asyncio.QueueFull, RuntimeError):
+            pass  # slow or closed client: drop, it resyncs on the next event
+
+
+def _raise_alert(well_id: str, ts: str, kind: str, severity: str, title: str, detail: str,
+                 persistent: bool = True) -> Optional[Dict]:
+    """Record an alert. Persistent conditions alert once until they clear."""
+    global _ALERT_SEQ
+    key = (well_id, kind)
+    if persistent and key in _ACTIVE_ALERT_KEYS:
+        return None
+    _ALERT_SEQ += 1
+    alert = {
+        "alert_id": f"ALR-{_ALERT_SEQ:05d}", "well_id": well_id, "timestamp": ts,
+        "type": kind, "severity": severity, "title": title, "detail": detail,
+        "acknowledged": False, "active": persistent,
+    }
+    ALERTS.append(alert)
+    if persistent:
+        _ACTIVE_ALERT_KEYS[key] = alert["alert_id"]
+    return alert
+
+
+def _clear_alert(well_id: str, kind: str) -> None:
+    alert_id = _ACTIVE_ALERT_KEYS.pop((well_id, kind), None)
+    if alert_id:
+        for a in ALERTS:
+            if a["alert_id"] == alert_id:
+                a["active"] = False
+
+
+def _evaluate_alerts(state, snapshot: Dict, card: Dict, pred: Dict,
+                     history: List[Dict], calib_k: Optional[float]) -> List[Dict]:
+    """Condition checks after every reading. SRP/ML checks only while producing."""
+    well, ts = state.well_id, state.timestamp
+    producing = state.css_phase == CSSPhase.PRODUCTION
+    raised = []
+
+    def cond(kind, active, severity, title, detail):
+        if active:
+            a = _raise_alert(well, ts, kind, severity, title, detail)
+            if a:
+                raised.append(a)
+        else:
+            _clear_alert(well, kind)
+
+    cond("TWIN_HIGH_RISK", producing and snapshot["overall_engineering_status"] == "HIGH_RISK",
+         "HIGH", "Engineering indicators HIGH", snapshot["recommendation"])
+    high_diag = [d for d in card["diagnosis"] if d["severity"] == "HIGH"]
+    cond("DYNACARD", producing and bool(high_diag), "HIGH",
+         f"Dynacard: {high_diag[0]['code'].replace('_', ' ').title()}" if high_diag else "Dynacard",
+         high_diag[0]["detail"] if high_diag else "")
+    for name, p in pred["predictions"].items():
+        cond(f"ML_{name.upper()}", producing and p["probability"] >= ML_ALERT_PROB, "HIGH",
+             f"{name.replace('_', ' ').title()} risk {p['probability'] * 100:.0f}% (next {p['horizon_days']} d)",
+             "Top drivers: " + ", ".join(
+                 f"{d['label']} ({d['direction']})" for d in p["top_drivers"][:2]))
+    # Anomalies on the newest reading; latched per metric so an ongoing fault alerts once.
+    window = history[-(analytics.ANOMALY_WINDOW + 1):]
+    newest = {(an["type"], an["metric"]): an
+              for an in analytics.detect_anomalies(window, calib_k) if an["timestamp"] == ts}
+    div = newest.get(("TWIN_DIVERGENCE", "oil_rate_bopd"))
+    cond("TWIN_DIVERGENCE", div is not None, "MODERATE",
+         "Measured oil diverges from calibrated twin", div["detail"] if div else "")
+    for metric in analytics.ANOMALY_METRICS:
+        out = newest.get(("STATISTICAL_OUTLIER", metric))
+        cond(f"OUTLIER_{metric.upper()}", out is not None, "MODERATE",
+             f"Abnormal {metric.replace('_', ' ')}", out["detail"] if out else "")
+    return raised
+
+
+def _ingest_state(payload, source: str = "API") -> Dict:
+    """Single ingest path for API and live-field readings."""
+    ts = payload.timestamp or _utc_now_iso()
+    state = payload.model_copy(update={"timestamp": ts})
+
+    WELL_STORE[state.well_id] = state
+
+    event_id = _next_event_id()
+    sha_hash = _telemetry_hash(state.well_id, event_id, ts, state.model_dump(mode="json"))
+
+    AUDIT_LOGS.append(
+        {
+            "event_id": event_id,
+            "ps_id": "SIH26120",
+            "well_id": state.well_id,
+            "css_phase": state.css_phase.value,
+            "oil_rate_bopd": state.oil_rate_bopd,
+            "sha256_hash": sha_hash,
+            "timestamp": ts,
+            "source": source,
+        }
+    )
+    if len(AUDIT_LOGS) > 100:
+        AUDIT_LOGS.pop(0)
+
+    snapshot = twin_physics.twin_snapshot(state)
+    card = srp_dynacard.dynacard(snapshot, state.api_gravity)
+    pred = ml_models.predict(state)
+
+    hist = HISTORY.setdefault(state.well_id, deque(maxlen=HISTORY_MAX))
+    hist.append({
+        "timestamp": ts,
+        "css_phase": state.css_phase.value,
+        "days_in_phase": state.days_in_phase,
+        "oil_rate_bopd": state.oil_rate_bopd,
+        "wellhead_pressure_bar": state.wellhead_pressure_bar,
+        "reservoir_pressure_bar": state.reservoir_pressure_bar,
+        "reservoir_temperature_c": state.reservoir_temperature_c,
+        "spm": state.spm,
+        "stroke_in": state.stroke_in,
+        "vfd_percent": state.vfd_percent,
+        "water_cut_percent": state.water_cut_percent,
+        "steam_volume_t": state.steam_volume_t,
+        "twin_oil_bopd": snapshot["estimated_oil_production_bopd"],
+        "twin_temperature_c": snapshot["estimated_temperature_c"],
+        "twin_viscosity_cp": snapshot["estimated_viscosity_cp"],
+        "twin_status": snapshot["overall_engineering_status"],
+        "pump_fillage": snapshot["estimated_pump_fillage"],
+        "rod_failure_prob": pred["predictions"]["rod_failure"]["probability"],
+        "pump_unsetting_prob": pred["predictions"]["pump_unsetting"]["probability"],
+    })
+    hist_list = list(hist)
+    calib = analytics.calibrate(hist_list)
+    alerts = _evaluate_alerts(state, snapshot, card, pred, hist_list,
+                              calib["k"] if calib["status"] == "CALIBRATED" else None)
+
+    _broadcast({
+        "type": "reading", "source": source, "well_id": state.well_id, "timestamp": ts,
+        "css_phase": state.css_phase.value, "oil_rate_bopd": state.oil_rate_bopd,
+        "twin_oil_bopd": snapshot["estimated_oil_production_bopd"],
+        "calibrated_twin_oil_bopd": round(calib["k"] * snapshot["estimated_oil_production_bopd"], 3),
+        "overall_engineering_status": snapshot["overall_engineering_status"],
+        "dynacard": card["primary_diagnosis"],
+        "alerts": alerts,
+    })
+    return {"event_id": event_id, "sha": sha_hash, "state": state, "snapshot": snapshot}
 
 
 @app.get("/", tags=["Health & Metadata"])
@@ -354,9 +545,9 @@ async def root():
         "department": "Oil India Limited",
         "theme": "Smart Automation",
         "domain": DOMAIN_LABEL,
-        "subsystem": "Well-to-surface Digital Twin (Block 3: simulation + optimization)",
+        "subsystem": "Well-to-surface Digital Twin (Block 4: cycle planning, SRP diagnostics, predictive analytics, real-time monitoring)",
         "status": "OPERATIONAL",
-        "version": "3.2.0-block3",
+        "version": APP_VERSION,
         "timestamp": _utc_now_iso(),
     }
 
@@ -406,29 +597,9 @@ async def ingest_telemetry(payload: WellTelemetry):
     by twin_physics. No ML, no risk scoring beyond transparent engineering
     indicators, no AI inference.
     """
-    ts = payload.timestamp or _utc_now_iso()
-    state = payload.model_copy(update={"timestamp": ts})
-
-    WELL_STORE[state.well_id] = state
-
-    event_id = _next_event_id()
-    sha_hash = _telemetry_hash(state.well_id, event_id, ts, state.model_dump(mode="json"))
-
-    AUDIT_LOGS.append(
-        {
-            "event_id": event_id,
-            "ps_id": "SIH26120",
-            "well_id": state.well_id,
-            "css_phase": state.css_phase.value,
-            "oil_rate_bopd": state.oil_rate_bopd,
-            "sha256_hash": sha_hash,
-            "timestamp": ts,
-        }
-    )
-    if len(AUDIT_LOGS) > 100:
-        AUDIT_LOGS.pop(0)
-
-    snapshot = twin_physics.twin_snapshot(state)
+    res = _ingest_state(payload)
+    state, snapshot, event_id, sha_hash = res["state"], res["snapshot"], res["event_id"], res["sha"]
+    ts = state.timestamp
     summary = TwinSummaryResponse(
         estimated_oil_production_bopd=snapshot["estimated_oil_production_bopd"],
         steam_oil_ratio_t_per_bbl=snapshot["steam_oil_ratio_t_per_bbl"],
@@ -488,6 +659,7 @@ def _applied_inputs(state) -> Dict:
         "spm": state.spm,
         "stroke_in": state.stroke_in,
         "css_phase": phase,
+        "vfd_setpoint_percent": twin_physics.vfd_for_spm(state.spm),
     }
 
 
@@ -521,6 +693,10 @@ async def simulate_well(well_id: str, scenario: ScenarioOverrides):
             detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
         )
     overrides = scenario.model_dump(exclude_none=True)
+    if "vfd_percent" in overrides and "spm" not in overrides:
+        overrides["spm"] = twin_physics.spm_for_vfd(overrides["vfd_percent"])
+    elif "spm" in overrides:
+        overrides["vfd_percent"] = twin_physics.vfd_for_spm(overrides["spm"])
     hypo = twin_optimize.apply_scenario(record, overrides)
     current = twin_physics.twin_snapshot(record)
     projected = twin_physics.twin_snapshot(hypo)
@@ -686,6 +862,266 @@ async def dispatch_action(req: DispatchRequest):
         status="DISPATCHED_TO_FIELD_TEAMS",
         dispatched_at=_utc_now_iso(),
     )
+
+
+# =====================================================================
+# BLOCK 4: cycle planning, SRP dynacard, analytics, ML, real-time
+# =====================================================================
+
+def _require_well(well_id: str) -> WellTelemetry:
+    record = WELL_STORE.get(well_id)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
+        )
+    return record
+
+
+class CyclePlanRequest(BaseModel):
+    steam_grid_t: Optional[List[Annotated[float, Field(ge=0.0, le=100000.0)]]] = Field(
+        default=None, min_length=1, max_length=8)
+    soak_grid_h: Optional[List[Annotated[float, Field(ge=0.0, le=720.0)]]] = Field(
+        default=None, min_length=1, max_length=8)
+    sor_limit_cwe: float = Field(default=css_cycle.SOR_CWE_LIMIT, gt=0.0, le=50.0)
+
+
+class LiveStartRequest(BaseModel):
+    interval_s: float = Field(default=2.0, ge=0.2, le=60.0)
+    hours_per_tick: float = Field(default=live_field.DEFAULT_HOURS_PER_TICK, ge=1.0, le=72.0)
+
+
+class DemoSeedRequest(BaseModel):
+    days: float = Field(default=45.0, ge=1.0, le=180.0)
+
+
+@app.get("/api/v1/wells/{well_id}/cycle", tags=["CSS Cycle"])
+async def well_cycle(well_id: str):
+    """Day-by-day CSS cycle at the well's current settings + optimal production cut-off."""
+    return css_cycle.simulate_cycle(_require_well(well_id))
+
+
+@app.post("/api/v1/wells/{well_id}/cycle/plan", tags=["CSS Cycle"])
+async def well_cycle_plan(well_id: str, request: Optional[CyclePlanRequest] = None):
+    """Steam volume x soak time search, each at its own optimal cut-off, under an SOR ceiling."""
+    req = request or CyclePlanRequest()
+    return css_cycle.plan_cycle(_require_well(well_id), req.steam_grid_t, req.soak_grid_h,
+                                req.sor_limit_cwe)
+
+
+@app.get("/api/v1/wells/{well_id}/dynacard", tags=["SRP Diagnostics"])
+async def well_dynacard(well_id: str):
+    """Predicted surface dynamometer card, rod loads and diagnosis for the latest state."""
+    record = _require_well(well_id)
+    return srp_dynacard.dynacard(twin_physics.twin_snapshot(record), record.api_gravity)
+
+
+@app.get("/api/v1/wells/{well_id}/predict", tags=["Predictive Models"])
+async def well_predict(well_id: str):
+    """30-day rod-failure / pump-unsetting probabilities with feature attributions."""
+    return ml_models.predict(_require_well(well_id))
+
+
+@app.get("/api/v1/ml/model", tags=["Predictive Models"])
+async def ml_model_card():
+    """Model card: training data statement, coefficients, holdout metrics."""
+    return ml_models.model_info()
+
+
+@app.get("/api/v1/wells/{well_id}/history", tags=["Analytics"])
+async def well_history(well_id: str, limit: int = Query(default=240, ge=1, le=HISTORY_MAX)):
+    """Measured telemetry alongside the twin's prediction at each reading (oldest first)."""
+    _require_well(well_id)
+    points = list(HISTORY.get(well_id, []))[-limit:]
+    return {"well_id": well_id, "count": len(points), "points": points}
+
+
+@app.get("/api/v1/wells/{well_id}/analytics", tags=["Analytics"])
+async def well_analytics(well_id: str):
+    """Twin auto-calibration, anomalies and decline forecast from the well's history."""
+    record = _require_well(well_id)
+    result = analytics.analyze(list(HISTORY.get(well_id, [])))
+    k = result["calibration"]["k"]
+    snap = twin_physics.twin_snapshot(record)
+    result["well_id"] = well_id
+    result["calibrated_twin_oil_bopd"] = round(k * snap["estimated_oil_production_bopd"], 3)
+    result["uncalibrated_twin_oil_bopd"] = snap["estimated_oil_production_bopd"]
+    return result
+
+
+@app.get("/api/v1/alerts", tags=["Real-time Monitoring"])
+async def list_alerts(active_only: bool = False, well_id: Optional[str] = None,
+                      limit: int = Query(default=50, ge=1, le=200)):
+    """Newest-first alerts raised by twin, dynacard, ML and anomaly checks."""
+    items = [a for a in reversed(ALERTS)
+             if (not active_only or a["active"]) and (well_id is None or a["well_id"] == well_id)]
+    unacked = sum(1 for a in ALERTS if not a["acknowledged"])
+    return {"total": len(items), "unacknowledged": unacked, "alerts": items[:limit]}
+
+
+@app.post("/api/v1/alerts/{alert_id}/ack", tags=["Real-time Monitoring"])
+async def ack_alert(alert_id: str):
+    for a in ALERTS:
+        if a["alert_id"] == alert_id:
+            a["acknowledged"] = True
+            return a
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Alert '{alert_id}' not found.")
+
+
+@app.get("/api/v1/field/overview", tags=["Real-time Monitoring"])
+async def field_overview():
+    """Field-level KPIs: measured vs calibrated-twin oil, phases, statuses, alerts."""
+    wells = []
+    for well_id, rec in sorted(WELL_STORE.items()):
+        snap = twin_physics.twin_snapshot(rec)
+        k = analytics.calibrate(list(HISTORY.get(well_id, [])))["k"]
+        active = [a for a in ALERTS if a["well_id"] == well_id and a["active"]]
+        wells.append({
+            "well_id": well_id, "css_phase": rec.css_phase.value, "days_in_phase": rec.days_in_phase,
+            "oil_rate_bopd": rec.oil_rate_bopd,
+            "calibrated_twin_oil_bopd": round(k * snap["estimated_oil_production_bopd"], 3),
+            "overall_engineering_status": snap["overall_engineering_status"],
+            "active_alerts": len(active), "last_update": rec.timestamp,
+        })
+    producing = [w for w in wells if w["css_phase"] == "PRODUCTION"]
+    by_phase: Dict[str, int] = {}
+    for w in wells:
+        by_phase[w["css_phase"]] = by_phase.get(w["css_phase"], 0) + 1
+    return {
+        "total_wells": len(wells),
+        "producing_wells": len(producing),
+        "by_phase": by_phase,
+        "field_oil_rate_bopd": round(sum(w["oil_rate_bopd"] for w in producing), 3),
+        "field_calibrated_twin_oil_bopd": round(sum(w["calibrated_twin_oil_bopd"] for w in producing), 3),
+        "active_alerts": sum(1 for a in ALERTS if a["active"]),
+        "unacknowledged_alerts": sum(1 for a in ALERTS if not a["acknowledged"]),
+        "live": _live_status(),
+        "wells": wells,
+    }
+
+
+# ---------------- Live synthetic field + SSE stream ----------------
+def _live_status() -> Dict:
+    sim = LIVE["sim"]
+    task = LIVE["task"]
+    return {
+        "running": bool(task is not None and not task.done()),
+        "interval_s": LIVE["interval_s"],
+        "ticks": sim.ticks if sim else 0,
+        "sim_clock": sim.clock.isoformat() if sim else None,
+        "hours_per_tick": sim.hours_per_tick if sim else None,
+        "wells": sim.well_ids() if sim else [],
+        "provenance": "SYNTHETIC_BAGHEWALA",
+    }
+
+
+def _stop_live() -> None:
+    task = LIVE.get("task")
+    if task is not None and not task.done():
+        task.cancel()
+    LIVE["task"] = None
+
+
+def _tick() -> List[Dict]:
+    """Advance the synthetic field one step and ingest every well's reading."""
+    if LIVE["sim"] is None:
+        LIVE["sim"] = live_field.FieldSimulator()
+    results = []
+    for item in LIVE["sim"].step():
+        res = _ingest_state(WellTelemetry(**item["reading"]), source="LIVE_SYNTHETIC")
+        results.append({"well_id": res["state"].well_id, "event_id": res["event_id"],
+                        "css_phase": res["state"].css_phase.value,
+                        "fault_event": item["fault_event"], "cycle_no": item["cycle_no"]})
+    return results
+
+
+async def _live_loop() -> None:
+    while True:
+        _tick()
+        await asyncio.sleep(LIVE["interval_s"])
+
+
+@app.post("/api/v1/demo/seed", tags=["Real-time Monitoring"])
+async def demo_seed(request: Optional[DemoSeedRequest] = None):
+    """Backfill the synthetic Baghewala field with `days` of history (4 wells).
+
+    Readings go through the normal ingest path (audit, twin, analytics, ML,
+    alerts). Provenance: SYNTHETIC_BAGHEWALA — never field data.
+    """
+    req = request or DemoSeedRequest()
+    if LIVE["sim"] is None:
+        LIVE["sim"] = live_field.FieldSimulator()
+    ticks = int(round(req.days * 24.0 / LIVE["sim"].hours_per_tick))
+    faults = 0
+    for _ in range(ticks):
+        faults += sum(1 for r in _tick() if r["fault_event"])
+    return {"status": "SEEDED", "ticks": ticks, "wells": LIVE["sim"].well_ids(),
+            "readings": ticks * len(LIVE["sim"].wells), "fault_readings": faults,
+            "alerts": len(ALERTS), "live": _live_status()}
+
+
+@app.post("/api/v1/live/start", tags=["Real-time Monitoring"])
+async def live_start(request: Optional[LiveStartRequest] = None):
+    """Start streaming synthetic field readings every interval_s seconds."""
+    req = request or LiveStartRequest()
+    _stop_live()
+    if LIVE["sim"] is None:
+        LIVE["sim"] = live_field.FieldSimulator(hours_per_tick=req.hours_per_tick)
+    LIVE["sim"].hours_per_tick = req.hours_per_tick
+    LIVE["interval_s"] = req.interval_s
+    LIVE["task"] = asyncio.get_running_loop().create_task(_live_loop())
+    return _live_status()
+
+
+@app.post("/api/v1/live/stop", tags=["Real-time Monitoring"])
+async def live_stop():
+    _stop_live()
+    return _live_status()
+
+
+@app.post("/api/v1/live/tick", tags=["Real-time Monitoring"])
+async def live_tick():
+    """Advance the synthetic field exactly one step (manual stepping for demos/tests)."""
+    return {"readings": _tick(), "live": _live_status()}
+
+
+@app.get("/api/v1/live/status", tags=["Real-time Monitoring"])
+async def live_status():
+    return _live_status()
+
+
+def _sse(event: Dict) -> str:
+    return f"event: {event.get('type', 'message')}\ndata: {json.dumps(event, default=str)}\n\n"
+
+
+@app.get("/api/v1/stream", tags=["Real-time Monitoring"])
+async def stream(request: Request, max_events: Optional[int] = Query(default=None, ge=1, le=10000)):
+    """Server-Sent Events: a 'hello' field snapshot, then one 'reading' per ingest."""
+    queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+    _SUBSCRIBERS.append(queue)
+
+    async def gen():
+        sent = 0
+        try:
+            yield _sse({"type": "hello", "wells": sorted(WELL_STORE), "live": _live_status(),
+                        "timestamp": _utc_now_iso()})
+            sent += 1
+            while max_events is None or sent < max_events:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                yield _sse(event)
+                sent += 1
+        finally:
+            if queue in _SUBSCRIBERS:
+                _SUBSCRIBERS.remove(queue)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 if __name__ == "__main__":

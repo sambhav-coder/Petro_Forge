@@ -76,6 +76,24 @@ marked [FROM-PS] (taken directly from the SIH problem statement text).
    Each returns risk_level (LOW <0.33 / MODERATE <0.66 / HIGH),
    risk_score 0..1 (ENGINEERING INDICATOR, not a probability), and a
    human-readable reason embedding the actual computed numbers.
+
+10. WATER CUT (Block 4)
+   The pump lifts total liquid, not oil. Inflow and pump capacity are
+   liquid rates; liquid = min(inflow, pump) and
+   oil = liquid * (1 - water_cut). SOR and energy/bbl use the oil rate.
+
+11. PRODUCTION-PHASE COOLING (Block 4)
+   In PRODUCTION with days_in_phase > 0 the heated zone cools toward
+   baseline with a slower time constant TAU_PROD_D (heat is carried
+   away by produced fluids and conduction over days, not hours):
+   T = T_base + (T_heated - T_base) * exp(-days / TAU_PROD_D).
+   days_in_phase = 0 reproduces the Block 2 snapshot exactly.
+
+12. PUMP FILLAGE ESTIMATE + VFD (Block 4)
+   estimated_fillage = clamp(inflow / (Q_theoretical * efficiency), 0, 1)
+   (a pumped-off well cannot fill the barrel). vfd_percent maps linearly
+   to SPM: SPM = SPM_AT_FULL_VFD * vfd / 100 (prototype drive/gearbox
+   ratio), so a recommended SPM is also reported as a VFD setpoint.
 =====================================================================
 """
 
@@ -123,6 +141,10 @@ K_PUMP_KWH = 0.5         # pumping energy per (SPM*inch) per 24 h day, kWh (prot
 RISK_LOW_MAX = 0.33
 RISK_MOD_MAX = 0.66
 MU_FLOAT_REF_CP = 2000.0  # viscosity scaling reference for float proxy, cP (prototype)
+
+# Block 4: production-phase cooling + VFD mapping (prototype)
+TAU_PROD_D = 25.0        # heated-zone cooling time constant during production, days (prototype)
+SPM_AT_FULL_VFD = 10.0   # SPM delivered at 100% VFD speed (prototype drive/gearbox ratio)
 
 _EPS = 1e-9
 
@@ -191,18 +213,47 @@ def effective_temperature_c(
     steam_injection_pressure_bar: float,
     soak_time_h: float,
     css_phase: str,
+    days_in_phase: float = 0.0,
 ) -> float:
     """Snapshot temperature: heating branch, or cooling branch when IDLE.
 
     soak_time_h is the representative thermal exposure duration
     (documented prototype choice). IDLE represents post-steam cooldown.
+    PRODUCTION with days_in_phase > 0 applies production-phase cooling.
     """
     intensity = heating_intensity(steam_volume_t, steam_injection_pressure_bar)
     heated = heating_temperature(baseline_c, intensity, soak_time_h)
-    if str(css_phase).upper() == "IDLE":
+    phase = str(css_phase).upper()
+    if phase == "IDLE":
         cool_for = soak_time_h if soak_time_h > 0 else IDLE_COOL_H
         return cooling_temperature(heated, baseline_c, cool_for)
+    if phase == "PRODUCTION" and days_in_phase > 0:
+        return production_cooling_temperature(heated, baseline_c, days_in_phase)
     return heated
+
+
+def production_cooling_temperature(heated_c: float, baseline_c: float, days: float) -> float:
+    """Heated-zone decay during production (days, slower than soak-scale tau)."""
+    return cooling_temperature(heated_c, baseline_c, max(days, 0.0) * 24.0, tau_h=TAU_PROD_D * 24.0)
+
+
+def spm_for_vfd(vfd_percent: float) -> float:
+    """SPM delivered at a VFD speed setting (linear prototype drive ratio)."""
+    return SPM_AT_FULL_VFD * clamp(vfd_percent, 0.0, 100.0) / 100.0
+
+
+def vfd_for_spm(spm: float) -> float:
+    """VFD speed setting (%) that delivers the given SPM, clamped to [0, 100]."""
+    return round(clamp(100.0 * max(spm, 0.0) / SPM_AT_FULL_VFD, 0.0, 100.0), 1)
+
+
+def estimated_pump_fillage(inflow_bpd: float, theoretical_bpd: float,
+                           efficiency: float = EFFICIENCY_DEFAULT) -> float:
+    """Fraction of the barrel that fills each stroke; < 1 when the pump outruns inflow."""
+    displacement = max(theoretical_bpd, 0.0) * clamp(efficiency, 0.0, 1.0)
+    if displacement <= _EPS:
+        return 0.0
+    return clamp(max(inflow_bpd, 0.0) / displacement, 0.0, 1.0)
 
 
 # ---------------- Part 2: viscosity ----------------
@@ -362,6 +413,8 @@ def twin_snapshot(state) -> dict:
     Pure function of the input: identical input -> identical output.
     """
     phase = str(state.css_phase.value if hasattr(state.css_phase, "value") else state.css_phase)
+    days_in_phase = max(float(getattr(state, "days_in_phase", 0.0) or 0.0), 0.0)
+    water_cut = clamp(float(getattr(state, "water_cut_percent", 0.0) or 0.0) / 100.0, 0.0, 1.0)
 
     intensity = heating_intensity(state.steam_volume_t, state.steam_injection_pressure_bar)
     temperature = effective_temperature_c(
@@ -370,6 +423,7 @@ def twin_snapshot(state) -> dict:
         state.steam_injection_pressure_bar,
         state.soak_time_h,
         phase,
+        days_in_phase,
     )
     viscosity = viscosity_cp(temperature, state.api_gravity)
     mobility = mobility_factor(viscosity)
@@ -381,7 +435,10 @@ def twin_snapshot(state) -> dict:
 
     pump_theoretical = theoretical_pump_capacity_bopd(state.spm, state.stroke_in)
     pump_actual = actual_pump_capacity_bopd(pump_theoretical, FILLAGE_DEFAULT, EFFICIENCY_DEFAULT)
-    production, limiting = couple_production_bopd(inflow, pump_actual)
+    liquid, limiting = couple_production_bopd(inflow, pump_actual)
+    production = liquid * (1.0 - water_cut)
+    water = liquid - production
+    fillage_est = estimated_pump_fillage(inflow, pump_theoretical, EFFICIENCY_DEFAULT)
 
     oil_window_bbl = production * SOR_WINDOW_DAYS
     sor_value, sor_status = steam_oil_ratio(state.steam_volume_t, oil_window_bbl)
@@ -425,7 +482,9 @@ def twin_snapshot(state) -> dict:
             f"{state.steam_volume_t:.0f} t at {state.steam_injection_pressure_bar:.0f} bar) "
             f"raises reservoir temperature from baseline {state.reservoir_temperature_c:.1f} C "
             f"to an estimated {temperature:.1f} C over {state.soak_time_h:.0f} h exposure "
-            f"(phase {phase})."
+            f"(phase {phase}"
+            + (f", {days_in_phase:.1f} days of production cooling" if phase == "PRODUCTION" and days_in_phase > 0 else "")
+            + ")."
         ),
         "viscosity": (
             f"Higher temperature reduces estimated viscosity in the prototype "
@@ -446,9 +505,16 @@ def twin_snapshot(state) -> dict:
             f"{EFFICIENCY_DEFAULT} gives {pump_actual:.1f} bopd pump capacity."
         ),
         "production": (
-            f"Estimated production {production:.1f} bopd is the lower of reservoir "
+            f"Estimated liquid rate {liquid:.1f} bpd is the lower of reservoir "
             f"inflow ({inflow:.1f}) and SRP pump capacity ({pump_actual:.1f}): "
-            f"{limiting.lower().replace('_', ' ')}."
+            f"{limiting.lower().replace('_', ' ')}. At {water_cut * 100:.0f}% water cut "
+            f"that is estimated oil production {production:.1f} bopd."
+        ),
+        "pump_fillage": (
+            f"Inflow {inflow:.1f} bpd against pump displacement "
+            f"{pump_theoretical * EFFICIENCY_DEFAULT:.1f} bpd gives estimated barrel "
+            f"fillage {fillage_est:.2f}"
+            + ("; incomplete fillage indicates fluid pound risk." if fillage_est < 0.75 else ".")
         ),
         "sor": (
             f"SOR {sor_value:.3f} t/bbl over the {SOR_WINDOW_DAYS:.0f}-day prototype "
@@ -483,6 +549,12 @@ def twin_snapshot(state) -> dict:
         "pump_theoretical_capacity_bopd": round(pump_theoretical, 3),
         "pump_capacity_bopd": round(pump_actual, 3),
         "estimated_oil_production_bopd": round(production, 3),
+        "estimated_liquid_production_bpd": round(liquid, 3),
+        "estimated_water_production_bwpd": round(water, 3),
+        "water_cut_percent": round(water_cut * 100.0, 3),
+        "estimated_pump_fillage": round(fillage_est, 4),
+        "vfd_setpoint_percent": vfd_for_spm(state.spm),
+        "days_in_phase": days_in_phase,
         "production_limiting_factor": limiting,
         "steam_volume_t": state.steam_volume_t,
         "evaluation_window_days": SOR_WINDOW_DAYS,

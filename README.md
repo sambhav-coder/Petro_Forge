@@ -61,6 +61,31 @@ Deterministic prototype physics **[PROTO]** produces a twin snapshot; transparen
 proxies score mechanical mismatch; side-effect-free simulation answers "what if…"; a
 bounded grid search recommends a joint CSS × SRP scenario with value-traceable reasons.
 
+## 3a. 🆕 Block 4 — closing the gaps in the problem statement
+
+| Problem statement asks for | What PetroForge now does | Module |
+|---|---|---|
+| CSS decisions: steam volume, soak time, **production cut-off** | Day-by-day CSS cycle through the twin (injection → soak → cooling production decline); **optimal cut-off** = day the cycle-average oil rate peaks; cycle SOR in bbl CWE/bbl; 25-plan steam × soak planner under an SOR ceiling | `css_cycle.py` |
+| SRP: stroke, SPM, **VFD** | VFD ↔ SPM drive mapping; every simulate/optimize result carries an actionable **VFD setpoint** | `twin_physics.py`, `twin_optimize.py` |
+| Rod floating, impact loading, pump unsetting | Predicted **surface dynamometer card** (API 11L rods, Mills acceleration, 0.340·SG·D²·H fluid load, viscous drag at tubing temperature, modified Goodman) → FLUID POUND / ROD FLOAT / ROD OVERLOAD diagnosis | `srp_dynacard.py` |
+| **Predictive analytics** | Twin **auto-calibration** (robust least-squares scale factor, MAPE before/after), **anomaly detection** (median/MAD z-score + engineering deadbands + calibrated-twin divergence), **Arps decline forecast** | `analytics.py` |
+| **AI-enabled** | 30-day **rod-failure / pump-unsetting probability** models (numpy logistic regression, 9 physics-informed features, per-prediction attributions, holdout AUC reported against the oracle ceiling) | `ml_models.py` |
+| **Real-time monitoring** | Live synthetic field (4 wells cycling through CSS, injected pump-wear / wellhead-surge faults) → same ingest path → **SSE stream** + latched **alerts** with ACK | `live_field.py`, `app.py` |
+| Physics honesty | Water cut applied (pump lifts liquid, oil = liquid × (1 − WC)); production-phase cooling via `days_in_phase`; estimated pump fillage | `twin_physics.py` |
+
+**Honest data statement.** Failure labels come from a documented synthetic hazard model and
+the live field is synthetic (`SYNTHETIC_BAGHEWALA`); no Oil India data is included. What is
+demonstrated is the working pipeline, which retrains unchanged on real failure logs and SCADA
+readings. Evidence that the pipeline works: calibration recovers each synthetic well's hidden
+productivity factor to ±0.005; every injected fault is caught, and alarm deadbands suppress
+noise-only alerts; model AUC matches the oracle ceiling (rod 0.727 vs 0.729, unsetting 0.867 vs 0.864).
+
+**Dashboard (Next.js, `frontend/`).** The 3D twin inspector gains WHAT-IF sliders (steam,
+pressure, soak, VFD, stroke, water cut), CYCLE (decline curve + cut-off + planner
+heat-map), SRP (dynacard + diagnosis), ANALYTICS (measured vs calibrated twin, decline
+forecast, anomalies) and ML (probabilities, drivers, risk trend, model card). The top bar has
+field KPIs, a **GO LIVE** toggle and an alerts drawer.
+
 ## 4. 🧠 Digital Twin Model
 
 Implemented in `project/twin_physics.py` (deterministic, unit-aware, no randomness):
@@ -193,17 +218,32 @@ project/
 | `GET` | `/api/v1/wells/{well_id}/twin` | Deterministic engineering snapshot |
 | `POST` | `/api/v1/wells/{well_id}/simulate` | Side-effect-free what-if + deltas |
 | `POST` | `/api/v1/wells/{well_id}/optimize` | Joint grid search: recommended + top-5 + reasons |
+| `GET` | `/api/v1/wells/{well_id}/cycle` | CSS cycle series + optimal cut-off + cycle SOR |
+| `POST` | `/api/v1/wells/{well_id}/cycle/plan` | Steam × soak planner under an SOR ceiling |
+| `GET` | `/api/v1/wells/{well_id}/dynacard` | Predicted dynamometer card, rod loads, diagnosis |
+| `GET` | `/api/v1/wells/{well_id}/predict` | 30-day rod-failure / pump-unsetting probabilities + drivers |
+| `GET` | `/api/v1/ml/model` | Model card: data statement, coefficients, holdout + oracle metrics |
+| `GET` | `/api/v1/wells/{well_id}/history` | Measured telemetry beside the twin prediction |
+| `GET` | `/api/v1/wells/{well_id}/analytics` | Calibration, anomalies, decline forecast |
+| `GET` | `/api/v1/field/overview` | Field KPIs (measured vs calibrated twin), phases, alerts |
+| `GET` | `/api/v1/alerts` · `POST /api/v1/alerts/{id}/ack` | Latched alerts + acknowledgement |
+| `POST` | `/api/v1/demo/seed` | Backfill the synthetic field (default 45 days) |
+| `POST` | `/api/v1/live/start` · `/stop` · `/tick` · `GET /status` | Live synthetic field control |
+| `GET` | `/api/v1/stream` | Server-Sent Events: one event per ingested reading |
 | `GET` | `/api/v1/audit/logs` | SHA-256 audit records |
 | `POST` | `/api/v1/action/dispatch` | Legacy acknowledgement (no field commands) |
 | `GET` | `/docs` | Swagger UI |
 
 ## 12. 🧪 Testing & Validation
 
-**85/85 tests passing** (`pytest -q`): 19 telemetry/API regression + 21 physics
+**111/111 tests passing** (`pytest -q`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
 (catalog, schema, units, cleaning, physical validation, provenance, synthetic
 determinism, physics reuse, pipeline, repository, data API, telemetry compat,
-path safety). Additionally validated live: 38/38 end-to-end
+path safety) + 26 Block 4 tests (`test_block4.py`: water cut, production cooling,
+VFD, dynacard, cycle cut-off optimality, planner, calibration incl. fault robustness,
+anomalies, decline fit, ML vs oracle AUC, simulator determinism, alerts latching,
+live tick, SSE stream, ingest contract). Additionally validated live: 38/38 end-to-end
 checks (full journey, physics directionals A–H, risk reproducibility, 243-grid,
 404/422 handling) and 9/9 dashboard contract checks.
 
@@ -221,7 +261,9 @@ python app.py
 
 - API: http://127.0.0.1:8000 · Swagger: http://127.0.0.1:8000/docs
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
-- Tests: `pytest -q` in `project/` (expect 85 passed)
+- 3D twin dashboard: `cd frontend && npm install && npm run dev`, open http://localhost:3000/twin,
+  click **Load synthetic field**, then **GO LIVE** (backend must be running on :8000)
+- Tests: `pytest -q` in `project/` (expect 111 passed)
 - Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
 
 ## 14. 🐳 Docker
@@ -244,9 +286,14 @@ docker-compose up --build
 - SOR is a prototype t/bbl convention (steam tonnes / oil barrels over 30 days)
 - Energy coefficients, objective weights (0.40/0.25/0.15/0.20), fillage/efficiency
   (0.85/0.75), risk bands are fixed prototype assumptions
-- VFD is recorded but **not** an active physics/optimization dimension
-- Storage is **in-memory** (restart wipes state); audit log capped at 100 records
-- No production control loop; **no trained ML model** in this baseline
+- VFD maps linearly to SPM through a prototype drive ratio (10 SPM at 100%)
+- Storage is **in-memory** (restart wipes state); audit log capped at 100, history at 720 readings/well
+- ML models are trained on **synthetic hazard labels**, not field failure logs; the live
+  field is synthetic. Both are clearly tagged and swap for real data without code changes
+- Pump depth (1100 m), rod string (7/8 in), drag coefficient and cycle constants are prototype values
+- The cycle planner often recommends the edge of its steam/soak grid: the prototype thermal
+  model has no heat loss during soak, so longer soak only costs downtime
+- No production control loop
 
 ## 16. 🔐 Safety / Engineering Position
 
@@ -257,12 +304,12 @@ domain-expert approval, and monitored deployment.
 
 ## 17. 🗺️ Roadmap (future work — NOT implemented)
 
-- Phase 1 — Interactive 3D Digital Twin
-- Phase 2 — Historical/Public Data Platform
-- Phase 3 — ML Intelligence
-- Phase 4 — Physics + ML Hybrid Twin
-- Phase 5 — Advanced SRP/Pump Visualization
-- Phase 6 — CSS Intelligence
+- ~~Phase 1 — Interactive 3D Digital Twin~~ (done)
+- Phase 2 — Historical/Public Data Platform (history + analytics done; persistence pending)
+- ~~Phase 3 — ML Intelligence~~ (done on synthetic labels; retrain on field logs)
+- ~~Phase 4 — Physics + ML Hybrid Twin~~ (auto-calibration + physics-informed features)
+- ~~Phase 5 — Advanced SRP/Pump Visualization~~ (dynamometer card)
+- ~~Phase 6 — CSS Intelligence~~ (cycle simulation, cut-off, planner)
 - Phase 7 — Advanced Multi-objective Optimization
 - Phase 8 — Full Control-Room Experience
 - Phase 9 — Production-grade Deployment

@@ -162,7 +162,11 @@ export default function WellAssembly({
           }}
         >
           {wellId}
-          {twin ? ` · ${twin.css_phase} · ${twin.estimated_oil_production_bopd.toFixed(1)} BOPD` : ""}
+          {twin
+            ? twin.css_phase === "PRODUCTION"
+              ? ` · PRODUCTION · twin ${twin.estimated_oil_production_bopd.toFixed(1)} BOPD`
+              : ` · ${twin.css_phase} · shut in`
+            : ""}
         </div>
       </Html>
 
