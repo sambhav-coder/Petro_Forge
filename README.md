@@ -14,7 +14,7 @@ oil wells of Baghewala Field (Oil India Limited).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
-[![Pytest](https://img.shields.io/badge/Tests-298_passed-brightgreen.svg)](./project)
+[![Pytest](https://img.shields.io/badge/Tests-319_passed-brightgreen.svg)](./project)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
 [![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
@@ -67,7 +67,7 @@ bounded grid search recommends a joint CSS × SRP scenario with value-traceable 
 |---|---|---|
 | CSS decisions: steam volume, soak time, **production cut-off** | Day-by-day CSS cycle through the twin (injection → soak → cooling production decline); **optimal cut-off** = day the cycle-average oil rate peaks; cycle SOR in bbl CWE/bbl; 25-plan steam × soak planner under an SOR ceiling; **multi-cycle outlook** (1–6 sequential cycles with propagated pressure depletion + residual heat, cumulative oil/steam/SOR, next-cycle recommendation) | `css_cycle.py` |
 | SRP: stroke, SPM, **VFD** | VFD ↔ SPM drive mapping; every simulate/optimize result carries an actionable **VFD setpoint** | `twin_physics.py`, `twin_optimize.py` |
-| Rod floating, impact loading, pump unsetting | Predicted **surface dynamometer card** (API 11L rods, Mills acceleration, 0.340·SG·D²·H fluid load, viscous drag at tubing temperature, modified Goodman) → FLUID POUND / ROD FLOAT / ROD OVERLOAD diagnosis | `srp_dynacard.py` |
+| Rod floating, impact loading, pump unsetting | Predicted **surface dynamometer card** (API 11L rods, Mills acceleration, 0.340·SG·D²·H fluid load, viscous drag at tubing temperature, modified Goodman) → FLUID POUND / ROD FLOAT / ROD OVERLOAD diagnosis; **pump performance layer** (polished-rod HP from card area, theoretical capacity from 2.0 in prototype bore, actual-vs-theoretical efficiency with explicit states, structured screening diagnostics with evidence + tied actions, separately-labeled ML health evidence) | `srp_dynacard.py`, `srp_performance.py` |
 | **Predictive analytics** | Twin **auto-calibration** (robust least-squares scale factor, MAPE before/after), **anomaly detection** (median/MAD z-score + engineering deadbands + calibrated-twin divergence), **Arps decline forecast** | `analytics.py` |
 | **AI-enabled** | 30-day **rod-failure / pump-unsetting probability** models (numpy logistic regression, 9 physics-informed features, per-prediction attributions, holdout AUC reported against the oracle ceiling) | `ml_models.py` |
 | **Real-time monitoring** | Live synthetic field (4 wells cycling through CSS, injected pump-wear / wellhead-surge faults) → same ingest path → **SSE stream** + latched **alerts** with ACK | `live_field.py`, `app.py` |
@@ -82,7 +82,7 @@ noise-only alerts; model AUC matches the oracle ceiling (rod 0.727 vs 0.729, uns
 
 **Dashboard (Next.js, `frontend/`).** The 3D twin inspector gains WHAT-IF sliders (steam,
 pressure, soak, VFD, stroke, water cut), CYCLE (decline curve + cut-off + planner
-heat-map + multi-cycle outlook with cumulative metrics and next-cycle recommendation), SRP (dynacard + diagnosis), ANALYTICS (measured vs calibrated twin, decline
+heat-map + multi-cycle outlook with cumulative metrics and next-cycle recommendation), SRP (dynacard + diagnosis + pump performance/efficiency/diagnostics/actions), ANALYTICS (measured vs calibrated twin, decline
 forecast, anomalies) and ML (probabilities, drivers, risk trend, model card). The top bar has
 field KPIs, a **GO LIVE** toggle and an alerts drawer.
 
@@ -227,7 +227,7 @@ project/
 | `GET` | `/api/v1/wells/{well_id}/cycle` | CSS cycle series + optimal cut-off + cycle SOR |
 | `POST` | `/api/v1/wells/{well_id}/cycle/plan` | Steam × soak planner under an SOR ceiling |
 | `POST` | `/api/v1/wells/{well_id}/cycle/multi` | Multi-cycle outlook (1–6 cycles, propagated state, cumulative SOR, next-cycle recommendation) |
-| `GET` | `/api/v1/wells/{well_id}/dynacard` | Predicted dynamometer card, rod loads, diagnosis |
+| `GET` | `/api/v1/wells/{well_id}/dynacard` | Predicted dynamometer card, rod loads, diagnosis + pump performance/efficiency/diagnostics/actions |
 | `GET` | `/api/v1/wells/{well_id}/predict` | 30-day rod-failure / pump-unsetting probabilities + drivers |
 | `GET` | `/api/v1/ml/model` | Model card: data statement, coefficients, holdout + oracle metrics |
 | `GET` | `/api/v1/wells/{well_id}/history` | Measured telemetry beside the twin prediction |
@@ -256,10 +256,10 @@ deprecated re-export shim. Test registries are pytest-temporary; the tracked
 
 ## 12. 🧪 Testing & Validation
 
-**298/298 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
+**319/319 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
 + 18 public-recovery tests (registry, bootstrap, provenance separation, compat)
-+ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer + 16 CSS-multi-cycle tests
++ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer + 16 CSS-multi-cycle + 21 SRP-performance tests
 + 26 Block 4 tests (`test_block4.py`: water cut, production cooling, VFD, dynacard,
 cycle cut-off optimality, planner, calibration incl. fault robustness, anomalies,
 decline fit, ML vs oracle AUC, simulator determinism, alerts latching, live tick,
@@ -284,7 +284,7 @@ python app.py
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
 - 3D twin dashboard: `cd frontend && npm install && npm run dev`, open http://localhost:3000/twin,
   click **Load synthetic field**, then **GO LIVE** (backend must be running on :8000)
-- Tests: `pytest -q` in `project/` (expect 298 passed)
+- Tests: `pytest -q` in `project/` (expect 319 passed)
 - Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
 
 ## 14. 🐳 Docker

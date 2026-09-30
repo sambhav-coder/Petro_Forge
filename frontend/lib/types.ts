@@ -323,6 +323,26 @@ export interface DynacardResponse {
   estimated_pump_fillage: number;
   diagnosis: Diagnosis[];
   primary_diagnosis: string;
+  pump_performance?: {
+    power: { polished_rod_hp: number; polished_rod_kw: number | null; unit: string; method: string; mode: string };
+    capacity: {
+      spm: number; stroke_in: number; bore_diameter_in: number; bore_area_in2: number;
+      displacement_in3_per_day: number; theoretical_capacity_bopd: number; unit: string; geometry_note: string;
+    };
+    efficiency: {
+      actual_liquid_bpd: number | null; theoretical_capacity_bopd: number | null;
+      unit: string; mode: string; status: string; value: number | null;
+      above_unity?: boolean; note: string;
+    };
+    diagnostics: Array<{
+      code: string; severity: string; wording: string; indicators: string[];
+      evidence: string[]; recommended_actions: string[];
+    }>;
+    recommendations: Array<{ for_diagnosis: string; severity: string; action: string }>;
+    ml_health: { status: string; note: string; mode?: string; production_safe?: boolean };
+    mode: string;
+    prototype_note: string;
+  };
 }
 
 /* ---- Block 4: ML ---- */

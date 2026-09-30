@@ -51,6 +51,7 @@ import css_cycle
 import live_field
 from ml import synthetic_hazard  # canonical ML runtime (SYNTHETIC demo mode)
 import srp_dynacard
+import srp_performance
 import twin_physics
 import twin_optimize
 
@@ -1676,9 +1677,26 @@ async def well_cycle_multi(well_id: str, request: Optional[MultiCycleRequest] = 
 
 @app.get("/api/v1/wells/{well_id}/dynacard", tags=["SRP Diagnostics"])
 async def well_dynacard(well_id: str):
-    """Predicted surface dynamometer card, rod loads and diagnosis for the latest state."""
+    """Predicted surface dynamometer card, rod loads and diagnosis for the latest state.
+
+    Extended with pump performance (power, capacity, efficiency), structured
+    screening diagnostics with tied actions, and separately-labeled canonical
+    ML health evidence. All original dynacard fields are preserved.
+    """
     record = _require_well(well_id)
-    return srp_dynacard.dynacard(twin_physics.twin_snapshot(record), record.api_gravity)
+    snap = twin_physics.twin_snapshot(record)
+    card = srp_dynacard.dynacard(snap, record.api_gravity)
+    ml_health = None
+    if ML_AVAILABLE:
+        try:
+            ml_health = _ML_INFERENCE_ENGINE.srp_health_model.assess(
+                well_id=well_id,
+                features={"spm": record.spm, "stroke": record.stroke_in},
+            ).model_dump()
+        except Exception:
+            ml_health = None
+    card["pump_performance"] = srp_performance.performance_summary(snap, card, ml_health)
+    return card
 
 
 @app.get("/api/v1/wells/{well_id}/predict", tags=["Predictive Models"])

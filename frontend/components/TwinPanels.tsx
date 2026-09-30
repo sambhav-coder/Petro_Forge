@@ -452,6 +452,61 @@ export function SrpPanel({ wellId, refreshKey }: { wellId: string; refreshKey: n
           ))}
         </div>
       </Section>
+      {card.pump_performance && (
+        <Section title="PUMP PERFORMANCE">
+          <div className="grid grid-cols-3 gap-1.5">
+            <Kpi label="PR HP" value={fmt(card.pump_performance.power.polished_rod_hp, 2)} unit="hp" />
+            <Kpi label="PR power" value={fmt(card.pump_performance.power.polished_rod_kw, 2)} unit="kW" />
+            <Kpi
+              label="Pump effic."
+              value={
+                card.pump_performance.efficiency.value !== null
+                  ? fmt(card.pump_performance.efficiency.value * 100, 1)
+                  : "—"
+              }
+              unit={card.pump_performance.efficiency.value !== null ? "%" : card.pump_performance.efficiency.status}
+              tone={
+                card.pump_performance.efficiency.status !== "CALCULATED"
+                  ? "warn"
+                  : (card.pump_performance.efficiency.value ?? 1) < 0.5
+                    ? "bad"
+                    : "good"
+              }
+            />
+            <Kpi label="Theoretical" value={fmt(card.pump_performance.capacity.theoretical_capacity_bopd, 0)} unit="bopd" />
+            <Kpi label="Actual liquid" value={fmt(card.pump_performance.efficiency.actual_liquid_bpd, 0)} unit="bpd" />
+            <Kpi label="Bore" value={fmt(card.pump_performance.capacity.bore_diameter_in, 1)} unit="in*" />
+          </div>
+          <p className="text-[10px] font-mono text-slate-500">
+            *{card.pump_performance.capacity.geometry_note}
+          </p>
+          <div className="space-y-2">
+            {card.pump_performance.diagnostics.map((d) => (
+              <div key={d.code} className="text-xs space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Pill level={d.severity === "LOW" ? "NORMAL" : d.severity} />
+                  <span className="font-mono text-slate-200">{d.code.replace(/_/g, " ")}</span>
+                </div>
+                <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-slate-400">
+                  {d.evidence.map((e, i) => (
+                    <li key={i}>{e}</li>
+                  ))}
+                </ul>
+                <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-teal-200/80">
+                  {d.recommended_actions.map((a, i) => (
+                    <li key={i}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] font-mono text-slate-500">
+            ML health: {card.pump_performance.ml_health.status}
+            {card.pump_performance.ml_health.mode ? ` · mode ${card.pump_performance.ml_health.mode}` : ""} —{" "}
+            {card.pump_performance.ml_health.note}
+          </p>
+        </Section>
+      )}
       <Note>
         Card from standard SRP relations (API 11L rod weights, Mills acceleration, 0.340·SG·D²·H fluid
         load, modified Goodman) plus prototype viscous drag at mean tubing temperature{" "}
