@@ -29,10 +29,38 @@ import type {
   WellTelemetry,
 } from "./types";
 
+export const LOCAL_API_FALLBACK = "http://127.0.0.1:8000";
+
+function isLocalHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+/** Resolve the backend base URL.
+ *
+ * NEXT_PUBLIC_API_BASE_URL is public configuration (not a secret) and must
+ * be set in production (Vercel). A localhost fallback applies ONLY when the
+ * page itself runs on localhost, so a misconfigured production build fails
+ * loudly instead of silently calling a developer machine.
+ */
 export function apiBase(): string {
-  const raw =
-    process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
-  return raw.replace(/\/$/, "");
+  const raw = (process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
+  if (raw) return raw.replace(/\/$/, "");
+  if (typeof window !== "undefined" && isLocalHostname(window.location.hostname)) {
+    return LOCAL_API_FALLBACK;
+  }
+  throw new Error(
+    "NEXT_PUBLIC_API_BASE_URL is not configured: set it to the backend base URL " +
+      "(production: https://petro-forge.onrender.com). Refusing localhost fallback outside local development."
+  );
+}
+
+/** Non-throwing label for status/error UI. Never used for requests. */
+export function apiBaseLabel(): string {
+  try {
+    return apiBase();
+  } catch {
+    return "unconfigured backend (set NEXT_PUBLIC_API_BASE_URL)";
+  }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

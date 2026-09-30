@@ -61,6 +61,7 @@ from data.bootstrap import bootstrap_public_data
 from data.pipeline import ingest_telemetry_batch
 from data.provenance import ProvenanceClass
 from data.repository import InMemoryRepository
+import deploy_config
 
 # Priority 3: ML Intelligence Engine
 try:
@@ -108,8 +109,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    # Explicit origins only (production frontend + local dev); never "*".
+    # No cookies/token auth is used by the frontend, so credentials stay off.
+    allow_origins=deploy_config.resolve_cors_origins(),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -628,6 +631,16 @@ def _ingest_state(payload, source: str = "API") -> Dict:
         "alerts": alerts,
     })
     return {"event_id": event_id, "sha": sha_hash, "state": state, "snapshot": snapshot}
+
+
+@app.get("/healthz", tags=["Health & Metadata"])
+async def healthz():
+    """Lightweight liveness probe for Render health checking.
+
+    No ML, no database, no frontend dependency: process is importable
+    and serving. The existing root endpoint (SIH metadata) is unchanged.
+    """
+    return {"status": "ok", "problem_id": "SIH26120", "version": APP_VERSION}
 
 
 @app.get("/", tags=["Health & Metadata"])

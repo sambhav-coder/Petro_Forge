@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, apiBase } from "@/lib/api";
+import { api, apiBaseLabel } from "@/lib/api";
 import { fmt } from "@/lib/scene";
 import type {
   Alert,
@@ -489,7 +489,7 @@ export default function Home() {
       {/* Error bar */}
       {error && (
         <div className="px-4 py-2 text-[11px] font-mono text-rose-300 bg-rose-500/8 border-b border-rose-500/25">
-          Unable to load well data: {error} — backend at {apiBase()}. Start FastAPI first.
+          Unable to load well data: {error} — backend at {apiBaseLabel()}. Start FastAPI first.
         </div>
       )}
 

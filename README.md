@@ -284,8 +284,32 @@ python app.py
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
 - 3D twin dashboard: `cd frontend && npm install && npm run dev`, open http://localhost:3000/twin,
   click **Load synthetic field**, then **GO LIVE** (backend must be running on :8000)
-- Tests: `pytest -q` in `project/` (expect 319 passed)
+- Tests: `pytest -q` in `project/` (expect 333 passed)
 - Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
+
+## 13b. 🌐 Production Deployment (Render + Vercel)
+
+Live: frontend `https://petro-forge.vercel.app` → backend `https://petro-forge.onrender.com`.
+
+**Backend (Render, no `render.yaml` — dashboard settings are the config):**
+root directory `project` · build `pip install -r requirements.txt` · start
+`uvicorn app:app --host 0.0.0.0 --port $PORT`. Optional env
+`PETROFORGE_CORS_ORIGINS` (comma-separated override); unset = baked-in
+production + local-dev origins. Free-tier sleep/restart **wipes in-memory
+state** (telemetry, history, alerts) — no durable persistence is claimed.
+
+**Frontend (Vercel):** requires `NEXT_PUBLIC_API_BASE_URL`
+(`https://petro-forge.onrender.com`, public config — never a secret). A
+production build without it fails loudly instead of calling localhost.
+
+**Health:** `GET /healthz` → `{"status": "ok", ...}` (Render probe-safe;
+existing `/` metadata endpoint unchanged). Backend CORS is explicit-origin
+only (never `*`); browser credentials stay off (no cookie/token auth exists).
+
+**Troubleshooting:** frontend can't reach backend → check Vercel env value
+(no trailing slash needed); CORS blocked → origin must be allow-listed
+(`project/deploy_config.py`); blank twin → backend asleep, retry after
+cold start; `NEXT_PUBLIC_*` must never hold secrets.
 
 ## 14. 🐳 Docker
 
