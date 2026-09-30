@@ -14,7 +14,7 @@ oil wells of Baghewala Field (Oil India Limited).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
-[![Pytest](https://img.shields.io/badge/Tests-267_passed-brightgreen.svg)](./project)
+[![Pytest](https://img.shields.io/badge/Tests-282_passed-brightgreen.svg)](./project)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
 [![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
@@ -150,8 +150,14 @@ Deterministic bounded grid search over the Block 2 physics (no scipy, no ML):
 - **Constraints:** input-safety ranges enforced by rejection (HTTP 422), custom grids
   1–5 values/dimension, max 2000 combinations
 - Returns recommended scenario (+score/inputs), current-vs-recommended delta, **top-5
-  scenarios**, and `why_recommended[]` reasons emitted only when their numeric condition
-  holds. Live example: 142.7 → 228.3 BOPD (+85.6), SOR 0.1986 → 0.0876, energy −187356 kWh.
+  scenarios**, **Pareto frontier** (non-dominated candidates over max production /
+  min SOR / min per-barrel energy / min mean risk), `objective_summary`,
+  prototype `constraints` report, and `why_recommended[]` reasons emitted only
+  when their numeric condition holds. Recommendation = highest weighted score
+  **among frontier candidates** ("recommended under current objective weights",
+  never globally optimal). No uncertainty bands are computed — uncertainty
+  quantification remains future work. Live example: 142.7 → 228.3 BOPD (+85.6),
+  SOR 0.1986 → 0.0876, energy −187356 kWh.
 
 ## 8. 🚨 Risk Engine
 
@@ -249,10 +255,10 @@ deprecated re-export shim. Test registries are pytest-temporary; the tracked
 
 ## 12. 🧪 Testing & Validation
 
-**267/267 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
+**282/282 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
 + 18 public-recovery tests (registry, bootstrap, provenance separation, compat)
-+ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification tests
++ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer tests
 + 26 Block 4 tests (`test_block4.py`: water cut, production cooling, VFD, dynacard,
 cycle cut-off optimality, planner, calibration incl. fault robustness, anomalies,
 decline fit, ML vs oracle AUC, simulator determinism, alerts latching, live tick,
@@ -277,7 +283,7 @@ python app.py
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
 - 3D twin dashboard: `cd frontend && npm install && npm run dev`, open http://localhost:3000/twin,
   click **Load synthetic field**, then **GO LIVE** (backend must be running on :8000)
-- Tests: `pytest -q` in `project/` (expect 267 passed)
+- Tests: `pytest -q` in `project/` (expect 282 passed)
 - Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
 
 ## 14. 🐳 Docker

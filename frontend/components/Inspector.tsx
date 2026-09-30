@@ -9,6 +9,7 @@ import type {
   ObjectKind,
   OptimizeResponse,
   PublicWellDetail,
+  ScenarioResult,
   SceneSelection,
   TwinSnapshot,
   WellTelemetry,
@@ -22,6 +23,119 @@ import type {
 } from "@/lib/types";
 import { Pill, Rows } from "./ui";
 import { AnalyticsPanel, CyclePanel, MlPanel, SrpPanel, WhatIfPanel } from "./TwinPanels";
+
+/* Pareto frontier section: production-vs-SOR trade-off scatter over the
+ * non-dominated candidate set. Frontier points are ringed and linked;
+ * selecting one reveals its full operating point. No uncertainty bands
+ * are drawn — the backend does not quantify uncertainty. */
+function ParetoSection({
+  frontier,
+  paretoCount,
+  policy,
+  uncertainty,
+  constraints,
+  selected,
+  onSelect,
+}: {
+  frontier: ScenarioResult[];
+  paretoCount: number;
+  policy?: string;
+  uncertainty?: string;
+  constraints?: Array<{ variable: string; label: string; min: number; max: number; kind: string; note: string }>;
+  selected: number | null;
+  onSelect: (rank: number | null) => void;
+}) {
+  const plotted = frontier.filter((f) => f.steam_oil_ratio_t_per_bbl !== null);
+  const prods = plotted.map((f) => f.estimated_oil_production_bopd);
+  const sors = plotted.map((f) => f.steam_oil_ratio_t_per_bbl as number);
+  const pMin = Math.min(...prods);
+  const pMax = Math.max(...prods);
+  const sMin = Math.min(...sors);
+  const sMax = Math.max(...sors);
+  const X = (p: number) => (pMax > pMin ? 24 + ((p - pMin) / (pMax - pMin)) * 252 : 150);
+  const Y = (s: number) => (sMax > sMin ? 148 - ((s - sMin) / (sMax - sMin)) * 124 : 86);
+  const ordered = [...plotted].sort((a, b) => a.estimated_oil_production_bopd - b.estimated_oil_production_bopd);
+  const sel = frontier.find((f) => f.rank === selected) ?? null;
+  return (
+    <div className="space-y-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2.5">
+      <div className="text-[11px] font-bold text-amber-200">
+        PARETO FRONTIER · {paretoCount} non-dominated candidate{paretoCount === 1 ? "" : "s"}
+      </div>
+      {policy && <p className="text-[10.5px] text-slate-400 leading-snug">{policy}</p>}
+      {plotted.length > 0 ? (
+        <svg viewBox="0 0 300 170" className="w-full h-auto" role="img" aria-label="Pareto trade-off: production versus SOR">
+          <text x="8" y="14" fontSize="9" fill="rgba(148,163,184,0.8)" fontFamily="monospace">SOR ↓</text>
+          <polyline
+            points={ordered.map((f) => `${X(f.estimated_oil_production_bopd)},${Y(f.steam_oil_ratio_t_per_bbl as number)}`).join(" ")}
+            fill="none" stroke="rgba(217,154,61,0.65)" strokeWidth="1.4" strokeDasharray="4 3"
+          />
+          {plotted.map((f) => {
+            const isSel = f.rank === selected;
+            return (
+              <g key={f.rank} onClick={() => onSelect(isSel ? null : f.rank)} style={{ cursor: "pointer" }}>
+                <title>{`#${f.rank}: ${f.estimated_oil_production_bopd.toFixed(1)} bopd, SOR ${f.steam_oil_ratio_t_per_bbl}`}</title>
+                <circle
+                  cx={X(f.estimated_oil_production_bopd)} cy={Y(f.steam_oil_ratio_t_per_bbl as number)}
+                  r={isSel ? 6 : 4} fill={isSel ? "#D99A3D" : "rgba(63,166,107,0.75)"}
+                  stroke={isSel ? "#E8DDC8" : "#D99A3D"} strokeWidth="1.2"
+                />
+              </g>
+            );
+          })}
+          <text x="236" y="164" fontSize="9" fill="rgba(148,163,184,0.8)" fontFamily="monospace">PROD →</text>
+        </svg>
+      ) : (
+        <p className="text-[10.5px] font-mono text-slate-500">No finite-SOR frontier points to plot.</p>
+      )}
+      {frontier.length !== plotted.length && (
+        <p className="text-[10px] font-mono text-slate-500">
+          {frontier.length - plotted.length} frontier candidate(s) have undefined SOR (zero production) and are listed only.
+        </p>
+      )}
+      <div className="space-y-0.5">
+        {frontier.map((f) => (
+          <button
+            key={f.rank}
+            onClick={() => onSelect(f.rank === selected ? null : f.rank)}
+            className={`w-full font-mono text-[11px] flex justify-between rounded px-1.5 py-0.5 text-left ${
+              f.rank === selected ? "bg-amber-500/15 text-amber-200" : "text-slate-300 hover:bg-slate-700/40"
+            }`}
+          >
+            <span>#{f.rank} {fmt(f.inputs.steam_volume_t, 0)}t/{fmt(f.inputs.soak_time_h, 0)}h/{fmt(f.inputs.spm)}spm</span>
+            <span>{fmt(f.estimated_oil_production_bopd)} bopd · {f.steam_oil_ratio_t_per_bbl !== null ? `SOR ${fmt(f.steam_oil_ratio_t_per_bbl, 4)}` : "SOR —"}</span>
+          </button>
+        ))}
+      </div>
+      {sel && (
+        <div className="rounded-md border border-slate-600/50 bg-slate-800/40 p-2">
+          <div className="text-[10px] font-bold font-mono text-slate-200 mb-1">CANDIDATE #{sel.rank} · PARETO-OPTIMAL</div>
+          <Rows
+            rows={[
+              ["Steam", `${fmt(sel.inputs.steam_volume_t, 0)} t @ ${fmt(sel.inputs.steam_injection_pressure_bar, 0)} bar`],
+              ["Soak", `${fmt(sel.inputs.soak_time_h, 0)} h`],
+              ["SPM / Stroke", `${fmt(sel.inputs.spm)} / ${fmt(sel.inputs.stroke_in, 0)} in`],
+              ["VFD setpoint", `${fmt(sel.inputs.vfd_setpoint_percent, 0)} % (mapped from SPM)`],
+              ["Production", `${fmt(sel.estimated_oil_production_bopd)} BOPD`],
+              ["SOR", sel.steam_oil_ratio_t_per_bbl !== null ? fmt(sel.steam_oil_ratio_t_per_bbl, 4) : "undefined (zero production)"],
+              ["Energy", `${fmt(sel.total_energy_kwh, 0)} kWh total`],
+              ["Mean risk", sel.mean_risk !== undefined ? fmt(sel.mean_risk, 3) : "—"],
+              ["Status", sel.overall_engineering_status],
+            ]}
+          />
+        </div>
+      )}
+      {constraints && constraints.length > 0 && (
+        <p className="text-[10px] font-mono text-slate-500 leading-snug">
+          Constraints: prototype input-safety ranges ({constraints.map((c) => c.label).join(" · ")}); out-of-range
+          grids rejected, never clamped. Not field-validated limits.
+        </p>
+      )}
+      {uncertainty && (
+        <p className="text-[10px] font-mono text-slate-500 leading-snug">Uncertainty: {uncertainty}</p>
+      )}
+    </div>
+  );
+}
 
 type Tab =
   | "OVERVIEW" | "WHAT-IF" | "CYCLE" | "SRP" | "HISTORY" | "ANALYTICS"
@@ -151,6 +265,7 @@ export default function Inspector({
   onTabConsumed?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("OVERVIEW");
+  const [paretoSel, setParetoSel] = useState<number | null>(null);
   const [historyData, setHistoryData] = useState<HistoryResponse | null>(null);
   const [coverageData, setCoverageData] = useState<WellCoverageSummary | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -899,6 +1014,17 @@ export default function Inspector({
                         </div>
                       ))}
                     </div>
+                    {opt.pareto_frontier && opt.pareto_frontier.length > 0 && (
+                      <ParetoSection
+                        frontier={opt.pareto_frontier}
+                        paretoCount={opt.pareto_count ?? opt.pareto_frontier.length}
+                        policy={opt.recommendation_policy}
+                        uncertainty={opt.uncertainty_note}
+                        constraints={opt.constraints}
+                        selected={paretoSel}
+                        onSelect={setParetoSel}
+                      />
+                    )}
                     <div>
                       <div className="text-[11px] font-bold text-slate-300 mb-1">WHY (backend reasons)</div>
                       <ul className="list-disc pl-4 space-y-1 text-slate-400">

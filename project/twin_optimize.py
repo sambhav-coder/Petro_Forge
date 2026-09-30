@@ -28,6 +28,11 @@ DOCUMENTATION (prototype/demo assumptions)
 - WHY GRID SEARCH: transparent, deterministic, dependency-free,
   millisecond-scale for this space, and every candidate is explainable
   — appropriate for a hackathon demonstration. No scipy required.
+- PARETO FRONTIER: non-dominated candidates over (max production, min
+  SOR, min per-barrel energy, min mean risk) using the same quantities
+  as the weighted score. The recommendation is the highest weighted
+  score AMONG frontier candidates — "recommended under current
+  objective weights", never globally optimal. No uncertainty bands.
 - VFD (Block 4): the VFD is the actuator that sets SPM. The grid still
   searches SPM (the variable the pump physics consumes) and every
   candidate reports the VFD setpoint that delivers it
@@ -75,6 +80,24 @@ BOUNDS = {
 
 SIM_MODE_LABEL = "PROTOTYPE_SIMULATION"
 OPT_MODE_LABEL = "PROTOTYPE_OPTIMIZATION"
+
+# Pareto / multi-objective reporting (prototype demonstration).
+# Objectives reuse the exact quantities the weighted score consumes:
+#   maximize production, minimize SOR, minimize per-barrel energy,
+#   minimize mean risk. Undefined SOR / per-barrel energy (zero
+#   production) is +inf: worst on that axis, never silently dropped.
+# Uncertainty quantification is NOT supported (see UNCERTAINTY_NOTE).
+RECOMMENDATION_POLICY = (
+    "Recommended under current objective weights "
+    f"(production {W_PROD}, SOR {W_SOR}, energy {W_ENERGY}, risk {W_RISK}): "
+    "highest weighted score among non-dominated (Pareto-optimal) candidates. "
+    "Not claimed globally optimal."
+)
+UNCERTAINTY_NOTE = (
+    "Uncertainty quantification is not supported: candidates are deterministic "
+    "point evaluations of uncalibrated prototype physics. No confidence bands "
+    "are computed or implied."
+)
 
 _LEVEL_RANK = {"LOW": 0, "MODERATE": 1, "HIGH": 2}
 
@@ -203,6 +226,114 @@ def _rank_key(item):
     )
 
 
+# ---------------- Pareto frontier (multi-objective) ----------------
+# Objective vector per candidate: (production [max], sor [min],
+# energy-per-barrel [min], mean risk [min]). A dominates B when A is no
+# worse on every objective and strictly better on at least one. Ties and
+# duplicate vectors never dominate each other. Pure vector comparison:
+# deterministic and independent of candidate ordering.
+def _objective_tuple(objectives: dict) -> tuple:
+    sor = objectives["sor_t_per_bbl"]
+    eng = objectives["energy_per_barrel_kwh"]
+    return (
+        objectives["production_bopd"],
+        float("inf") if sor is None else sor,
+        float("inf") if eng is None else eng,
+        objectives["mean_risk"],
+    )
+
+
+def pareto_flags(vectors: list) -> list:
+    """Non-dominated flags for (production, sor, energy, risk) tuples.
+
+    vectors use +inf for undefined minimize-quantities. Returns a bool
+    per vector: True = pareto-optimal. Empty input -> [].
+    """
+    n = len(vectors)
+    flags = [True] * n
+    for i in range(n):
+        if not flags[i]:
+            continue
+        pi, si, ei, ri = vectors[i]
+        for j in range(n):
+            if i == j:
+                continue
+            pj, sj, ej, rj = vectors[j]
+            # j dominates i: no worse everywhere (prod max, rest min)...
+            if pj >= pi and sj <= si and ej <= ei and rj <= ri:
+                # ...and strictly better on at least one axis.
+                if pj > pi or sj < si or ej < ei or rj < ri:
+                    flags[i] = False
+                    break
+    return flags
+
+
+def attach_pareto(evaluated: list) -> list:
+    """Attach 'objectives' dicts + 'pareto_optimal' flags (in place).
+
+    Requires 'mean_risk' (set by score_candidates) on each item.
+    """
+    for e in evaluated:
+        snap = e["snapshot"]
+        e["objectives"] = {
+            "production_bopd": snap["estimated_oil_production_bopd"],
+            "sor_t_per_bbl": snap["steam_oil_ratio_t_per_bbl"],
+            "energy_per_barrel_kwh": snap["energy_per_barrel_kwh"],
+            "mean_risk": e["mean_risk"],
+        }
+    vectors = [_objective_tuple(e["objectives"]) for e in evaluated]
+    for e, flag in zip(evaluated, pareto_flags(vectors)):
+        e["pareto_optimal"] = flag
+    return evaluated
+
+
+def objective_summary(evaluated: list) -> dict:
+    """Finite min/max per objective + direction (for trade-off display)."""
+    def finite(key):
+        vals = [e["objectives"][key] for e in evaluated
+                if e["objectives"][key] is not None
+                and e["objectives"][key] != float("inf")]
+        return vals
+    out = {}
+    for key, direction in (("production_bopd", "maximize"),
+                           ("sor_t_per_bbl", "minimize"),
+                           ("energy_per_barrel_kwh", "minimize"),
+                           ("mean_risk", "minimize")):
+        vals = finite(key)
+        total = len(evaluated)
+        out[key] = {
+            "min": min(vals) if vals else None,
+            "max": max(vals) if vals else None,
+            "direction": direction,
+            "undefined_count": total - len(vals),
+        }
+    return out
+
+
+def constraint_report() -> list:
+    """Prototype input-safety constraints (rejection, never clamping).
+
+    These are engineering input-safety ranges, NOT field-validated
+    Baghewala operating limits.
+    """
+    labels = {
+        "steam_volume_t": "steam volume (t)",
+        "steam_injection_pressure_bar": "injection pressure (bar)",
+        "soak_time_h": "soak time (h)",
+        "spm": "SPM",
+        "stroke_in": "stroke (in)",
+    }
+    return [{
+        "variable": key,
+        "label": labels[key],
+        "min": lo,
+        "max": hi,
+        "kind": "prototype_input_safety_range",
+        "note": "Out-of-range grid values are rejected (HTTP 422), never silently clamped. "
+                "Not a field-validated Baghewala limit.",
+    } for key, (lo, hi) in BOUNDS.items()]
+
+
 # ---------------- Optimization ----------------
 def optimize_well(state, grid: dict = None) -> dict:
     """Joint CSSxSRP grid search over the Block 2 physics. Fully deterministic."""
@@ -225,19 +356,40 @@ def optimize_well(state, grid: dict = None) -> dict:
         )
 
     score_candidates(evaluated)
+    attach_pareto(evaluated)
     ranked = sorted(evaluated, key=_rank_key)
     for rank, item in enumerate(ranked, start=1):
         item["rank"] = rank
+    frontier = sorted(
+        [e for e in evaluated if e["pareto_optimal"]],
+        key=lambda e: (-e["objectives"]["production_bopd"], e["grid_index"]),
+    )
+    # Recommendation: highest weighted score among non-dominated candidates
+    # ("recommended under current objective weights", never globally optimal).
+    pool = frontier or ranked
+    pareto_best = sorted(pool, key=_rank_key)[0]
 
     current = tp.twin_snapshot(state)
-    best = ranked[0]
+    best = pareto_best
     delta = compare_snapshots(current, best["snapshot"])
     reasons = build_reasons(current, best["snapshot"])
+    reasons.insert(
+        0,
+        f"Non-dominated Pareto-optimal candidate (rank #{best['rank']} overall, "
+        f"1 of {len(frontier)} on the frontier of {len(evaluated)} evaluated). "
+        f"{RECOMMENDATION_POLICY}",
+    )
 
     return {
         "current": current,
         "best": best,
         "ranked": ranked,
+        "frontier": frontier,
+        "pareto_count": len(frontier),
+        "objective_summary": objective_summary(evaluated),
+        "constraints": constraint_report(),
+        "recommendation_policy": RECOMMENDATION_POLICY,
+        "uncertainty_note": UNCERTAINTY_NOTE,
         "delta": delta,
         "why_recommended": reasons,
         "scenarios_evaluated": len(evaluated),

@@ -135,6 +135,9 @@ export interface ScenarioResult {
   steam_oil_ratio_t_per_bbl: number | null;
   sor_status: string;
   total_energy_kwh: number;
+  energy_per_barrel_kwh?: number | null;
+  mean_risk?: number;
+  pareto_optimal?: boolean;
   rod_float_risk: RiskIndicator;
   impact_risk: RiskIndicator;
   pump_unsetting_risk: RiskIndicator;
@@ -159,6 +162,12 @@ export interface OptimizeResponse {
   };
   objective_score: number;
   top_scenarios: ScenarioResult[];
+  pareto_frontier?: ScenarioResult[];
+  pareto_count?: number;
+  objective_summary?: Record<string, { min: number | null; max: number | null; direction: string; undefined_count: number }>;
+  constraints?: Array<{ variable: string; label: string; min: number; max: number; kind: string; note: string }>;
+  recommendation_policy?: string;
+  uncertainty_note?: string;
   why_recommended: string[];
   assumptions: string[];
   scenarios_evaluated: number;

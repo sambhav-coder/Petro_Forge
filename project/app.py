@@ -306,6 +306,9 @@ class ScenarioResultResponse(BaseModel):
     steam_oil_ratio_t_per_bbl: Optional[float] = None
     sor_status: str
     total_energy_kwh: float
+    energy_per_barrel_kwh: Optional[float] = None
+    mean_risk: float = 0.0
+    pareto_optimal: bool = False
     rod_float_risk: RiskIndicatorResponse
     impact_risk: RiskIndicatorResponse
     pump_unsetting_risk: RiskIndicatorResponse
@@ -326,6 +329,12 @@ class OptimizeResponse(BaseModel):
     delta: DeltaResponse
     objective_score: float
     top_scenarios: List[ScenarioResultResponse]
+    pareto_frontier: List[ScenarioResultResponse] = Field(default_factory=list)
+    pareto_count: int = 0
+    objective_summary: Dict[str, Any] = Field(default_factory=dict)
+    constraints: List[Dict[str, Any]] = Field(default_factory=list)
+    recommendation_policy: str = ""
+    uncertainty_note: str = ""
     why_recommended: List[str]
     assumptions: List[str]
     scenarios_evaluated: int
@@ -827,6 +836,9 @@ def _scenario_result(item: Dict) -> Dict:
         "steam_oil_ratio_t_per_bbl": snap["steam_oil_ratio_t_per_bbl"],
         "sor_status": snap["sor_status"],
         "total_energy_kwh": snap["total_energy_kwh"],
+        "energy_per_barrel_kwh": snap["energy_per_barrel_kwh"],
+        "mean_risk": item.get("mean_risk", 0.0),
+        "pareto_optimal": item.get("pareto_optimal", False),
         "rod_float_risk": snap["rod_float_risk"],
         "impact_risk": snap["impact_risk"],
         "pump_unsetting_risk": snap["pump_unsetting_risk"],
@@ -871,8 +883,11 @@ async def optimize_well(well_id: str, request: OptimizeRequest = None):
     """Joint CSSxSRP grid-search optimization over the Block 2 prototype physics.
 
     Side-effect free. Uses prototype demonstration weights (0.40 production,
-    0.25 SOR, 0.15 energy, 0.20 risk) — not Oil India provided. The result
-    is a scenario recommendation, not a field command.
+    0.25 SOR, 0.15 energy, 0.20 risk) — not Oil India provided. Returns the
+    Pareto frontier over (max production, min SOR, min per-barrel energy,
+    min mean risk); the recommendation is the highest weighted score among
+    non-dominated candidates. The result is a scenario recommendation,
+    not a field command.
     """
     record = WELL_STORE.get(well_id)
     if record is None:
@@ -897,6 +912,12 @@ async def optimize_well(well_id: str, request: OptimizeRequest = None):
         delta=result["delta"],
         objective_score=best["score"],
         top_scenarios=[_scenario_result(item) for item in result["ranked"][: twin_optimize.TOP_K]],
+        pareto_frontier=[_scenario_result(item) for item in result["frontier"]],
+        pareto_count=result["pareto_count"],
+        objective_summary=result["objective_summary"],
+        constraints=result["constraints"],
+        recommendation_policy=result["recommendation_policy"],
+        uncertainty_note=result["uncertainty_note"],
         why_recommended=result["why_recommended"],
         assumptions=twin_optimize.assumption_lines(result["grid"]),
         scenarios_evaluated=result["scenarios_evaluated"],
