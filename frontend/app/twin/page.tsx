@@ -716,6 +716,8 @@ export default function Home() {
               onIsolate={setIsolated}
               onShowAll={() => setIsolated(null)}
               refreshKey={refreshKey}
+              alerts={alerts}
+              onAckAlert={ackAlert}
               onClose={() => {
                 setInspectorOpen(false);
                 setForcedTab(null);

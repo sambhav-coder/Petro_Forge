@@ -26,6 +26,7 @@ Thumbs.db
 # Node / frontend future-proofing
 node_modules/
 .next/
+*.tsbuildinfo
 dist/
 build/
 

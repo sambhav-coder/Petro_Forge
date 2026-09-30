@@ -5,6 +5,7 @@ import { OBJECT_META, fmt } from "@/lib/scene";
 import { COMPONENTS, isIsolatable } from "@/lib/components";
 import { api } from "@/lib/api";
 import type {
+  Alert,
   IsolatableKind,
   ObjectKind,
   OptimizeResponse,
@@ -232,6 +233,127 @@ const OBJECT_SECTIONS: Record<
   }),
 };
 
+/* Operator brief: compact orientation → alert → hybrid → recommendation
+ * flow reusing canonical responses. No calculations here; drill-down
+ * buttons only switch tabs (optimization is never auto-run). */
+function alertTab(a: Alert): Tab {
+  if (a.type.startsWith("ML_")) return "ML-RISK";
+  if (a.type.startsWith("DYNACARD")) return "SRP";
+  if (a.type === "TWIN_DIVERGENCE") return "HYBRID";
+  if (a.type.startsWith("OUTLIER_")) return "ANALYTICS";
+  return "OVERVIEW";
+}
+
+function OperatorBrief({
+  wellId,
+  telemetry,
+  alerts,
+  onAckAlert,
+  hybrid,
+  hybridLoading,
+  goTab,
+}: {
+  wellId: string;
+  telemetry: WellTelemetry;
+  alerts: Alert[];
+  onAckAlert: (id: string) => void;
+  hybrid: HybridTwinResponse | null;
+  hybridLoading: boolean;
+  goTab: (t: Tab) => void;
+}) {
+  const mine = alerts
+    .filter((a) => a.well_id === wellId)
+    .sort((a, b) => Number(a.acknowledged) - Number(b.acknowledged));
+  const active = mine.filter((a) => !a.acknowledged);
+  return (
+    <section aria-label="Operator brief">
+      <h4 className="text-[11px] font-bold text-teal-200 mb-1">OPERATOR BRIEF</h4>
+      <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-300">
+        <span className="font-bold text-slate-100">{wellId}</span>
+        {hybrid ? (
+          <Pill level={hybrid.data_status === "SYNTHETIC_DEMO" ? "MODERATE" : "LOW"} />
+        ) : null}
+        <span className="text-slate-400">{hybrid ? hybrid.data_status.replace(/_/g, " ") : "…"}</span>
+        <span className="text-slate-500">{telemetry.timestamp ?? "—"}</span>
+        <span className={active.length > 0 ? "text-rose-300 font-bold" : "text-slate-500"}>
+          {active.length > 0 ? `${active.length} active alert${active.length === 1 ? "" : "s"}` : "no active alerts"}
+        </span>
+      </div>
+      <div className="mt-2 space-y-1.5">
+        {mine.slice(0, 2).map((a) => (
+          <div key={a.alert_id} className="rounded-lg border border-slate-700/50 bg-slate-800/40 px-2.5 py-2">
+            <div className="flex items-center gap-2">
+              <Pill level={a.severity} />
+              <span className="text-[10px] font-mono text-slate-300">{a.type.replace(/_/g, " ")}</span>
+              <span className="text-[10px] font-mono text-slate-500">{a.timestamp.slice(5, 16).replace("T", " ")}</span>
+              <div className="flex-1" />
+              {!a.acknowledged && (
+                <button
+                  onClick={() => onAckAlert(a.alert_id)}
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-700 border border-slate-600 hover:border-teal-300/60"
+                >
+                  ACK
+                </button>
+              )}
+              <button
+                onClick={() => goTab(alertTab(a))}
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-700 border border-slate-600 hover:border-teal-300/60"
+                title={`Open ${alertTab(a)} panel for evidence`}
+              >
+                Investigate →
+              </button>
+            </div>
+            <div className="text-[11px] text-slate-200 mt-1">{a.title}</div>
+            <div className="text-[10px] text-slate-500 leading-snug">{a.detail}</div>
+          </div>
+        ))}
+        {mine.length === 0 && (
+          <p className="text-[11px] font-mono text-slate-500">No alerts for this well — clear state, not assumed health.</p>
+        )}
+      </div>
+      <div className="mt-2">
+        {hybridLoading ? (
+          <p className="text-[11px] font-mono text-slate-500">Loading hybrid summary…</p>
+        ) : hybrid ? (
+          <div className="space-y-1">
+            <Rows
+              rows={[
+                ["Twin", `${fmt(hybrid.physics.prediction.oil_production_bopd)} BOPD (${hybrid.physics.prediction.limiting_factor})`],
+                ["Calibrated", hybrid.calibrated_prediction
+                  ? `${fmt(hybrid.calibrated_prediction.oil_production_bopd)} BOPD`
+                  : "unavailable — raw physics only"],
+                ["Divergence", hybrid.divergence.status === "CALCULATED"
+                  ? `${hybrid.divergence.severity} (${hybrid.divergence.baseline})`
+                  : "unavailable"],
+                ["Diagnosis", hybrid.diagnostics[0] ? hybrid.diagnostics[0].code.replace(/_/g, " ") : "—"],
+                ["ML", `${hybrid.ml_evidence.mode} evidence (separate)`],
+              ]}
+            />
+            {hybrid.recommendations.slice(0, 2).map((r, i) => (
+              <p key={i} className="text-[10.5px] text-slate-400 leading-snug">
+                <span className="font-mono text-slate-500">[{r.source}]</span> {r.text}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] font-mono text-slate-500">Hybrid unavailable — no data fabricated.</p>
+        )}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {(["HYBRID", "SRP", "CYCLE", "HISTORY", "ANALYTICS"] as Tab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => goTab(t)}
+            className="text-[10px] font-mono px-2 py-1 rounded-md bg-slate-800/60 border border-slate-600/60 text-slate-300 hover:border-teal-300/60 hover:text-slate-100"
+          >
+            {t === "CYCLE" ? "CSS →" : `${t} →`}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function Inspector({
   selection,
   wellId,
@@ -248,6 +370,8 @@ export default function Inspector({
   onClose,
   forceTab,
   onTabConsumed,
+  alerts,
+  onAckAlert,
 }: {
   selection: SceneSelection | null;
   wellId: string | null;
@@ -264,6 +388,8 @@ export default function Inspector({
   onClose?: () => void;
   forceTab?: string | null;
   onTabConsumed?: () => void;
+  alerts: Alert[];
+  onAckAlert: (id: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("OVERVIEW");
   const [paretoSel, setParetoSel] = useState<number | null>(null);
@@ -318,9 +444,10 @@ export default function Inspector({
     }
   }, [tab, wellId]);
 
-  // Load hybrid twin view when HYBRID tab is selected
+  // Load hybrid twin view when HYBRID tab is selected; the OVERVIEW
+  // operator brief reuses the same response (no duplicate calculation).
   useEffect(() => {
-    if (tab === "HYBRID" && wellId) {
+    if ((tab === "HYBRID" || tab === "OVERVIEW") && wellId && !publicDetail) {
       setHybridLoading(true);
       api
         .hybridTwin(wellId)
@@ -328,7 +455,7 @@ export default function Inspector({
         .catch(() => setHybridData(null))
         .finally(() => setHybridLoading(false));
     }
-  }, [tab, wellId]);
+  }, [tab, wellId, publicDetail]);
 
   // Load ML data when ML tab is selected
   useEffect(() => {
@@ -550,6 +677,17 @@ export default function Inspector({
           <>
             {tab === "OVERVIEW" && (
               <div className="space-y-4">
+                {wellId && (
+                  <OperatorBrief
+                    wellId={wellId}
+                    telemetry={telemetry}
+                    alerts={alerts}
+                    onAckAlert={onAckAlert}
+                    hybrid={hybridData}
+                    hybridLoading={hybridLoading}
+                    goTab={setTab}
+                  />
+                )}
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-400 font-mono">STATUS</span>
                   <Pill level={twin.overall_engineering_status} />

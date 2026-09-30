@@ -14,7 +14,7 @@ oil wells of Baghewala Field (Oil India Limited).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
-[![Pytest](https://img.shields.io/badge/Tests-351_passed-brightgreen.svg)](./project)
+[![Pytest](https://img.shields.io/badge/Tests-369_passed-brightgreen.svg)](./project)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
 [![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
@@ -266,12 +266,24 @@ synthetic-hazard ML evidence → evidence-mapped recommendations. Uncertainty
 is explicitly `UNAVAILABLE`; public-only wells return
 `INSUFFICIENT_PUBLIC_TELEMETRY`.
 
+### Operator Control Room (Inspector OVERVIEW → OPERATOR BRIEF)
+
+One shared selected well drives every panel; the brief answers orientation
+(well, data-state, timestamp, active alerts), current condition, Hybrid
+summary, sourced recommendations (`[source]` tags, ML kept separate), and
+drill-down actions into HYBRID/SRP/CSS/HISTORY/optimization tabs.
+Optimization is never auto-run. Data states: `LIVE_TELEMETRY`,
+`SYNTHETIC_DEMO`, `HISTORICAL` (public records), `INSUFFICIENT_DATA`,
+`UNAVAILABLE` — never zero-filled, never upgraded. In-memory state wipes
+on restart (documented prototype limit); this is decision support, not
+field control.
+
 ## 12. 🧪 Testing & Validation
 
-**351/351 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
+**369/369 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
 + 18 public-recovery tests (registry, bootstrap, provenance separation, compat)
-+ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer + 16 CSS-multi-cycle + 21 SRP-performance + 18 Hybrid-Twin tests
++ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer + 16 CSS-multi-cycle + 21 SRP-performance + 18 Hybrid-Twin + 18 Control-Room tests
 + 26 Block 4 tests (`test_block4.py`: water cut, production cooling, VFD, dynacard,
 cycle cut-off optimality, planner, calibration incl. fault robustness, anomalies,
 decline fit, ML vs oracle AUC, simulator determinism, alerts latching, live tick,
@@ -296,7 +308,7 @@ python app.py
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
 - 3D twin dashboard: `cd frontend && npm install && npm run dev`, open http://localhost:3000/twin,
   click **Load synthetic field**, then **GO LIVE** (backend must be running on :8000)
-- Tests: `pytest -q` in `project/` (expect 351 passed)
+- Tests: `pytest -q` in `project/` (expect 369 passed)
 - Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
 
 ## 13b. 🌐 Production Deployment (Render + Vercel)
