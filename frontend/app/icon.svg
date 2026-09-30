@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PetroForge">
+  <defs>
+    <linearGradient id="pf-metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C6A878"/>
+      <stop offset="55%" stop-color="#7A5234"/>
+      <stop offset="100%" stop-color="#5A3A24"/>
+    </linearGradient>
+    <radialGradient id="pf-face" cx="0.5" cy="0.42" r="0.7">
+      <stop offset="0%" stop-color="#16432C"/>
+      <stop offset="100%" stop-color="#07100D"/>
+    </radialGradient>
+  </defs>
+  <!-- tile: solid dark field + green edge reads on light and dark browser chrome -->
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="#07100D" stroke="#1F6B45" stroke-width="2"/>
+  <!-- hexagonal frame: official PetroForge mark -->
+  <polygon points="32,9 53,21 53,43 32,55 11,43 11,21"
+    fill="url(#pf-face)" stroke="url(#pf-metal)" stroke-width="3" stroke-linejoin="round"/>
+  <!-- PF monogram, emboldened for 16px legibility -->
+  <text x="32" y="40" text-anchor="middle"
+    font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="21" letter-spacing="-1"
+    fill="#E8DDC8">PF</text>
+  <!-- amber forge base -->
+  <rect x="19" y="45.5" width="26" height="3.4" rx="1.7" fill="#D99A3D"/>
+</svg>

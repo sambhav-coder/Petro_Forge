@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PETROFORGE — Physics × AI × Digital Twin",
+  title: "PETROFORGE — Physics × AI — Digital Twin",
   description:
     "PetroForge: Premium industrial digital twin platform for well-to-surface optimization of Cyclic Steam Stimulation and SRP operations in heavy oil reservoirs.",
   keywords: [
@@ -18,6 +18,9 @@ export const metadata: Metadata = {
     "AI forecasting",
   ],
   authors: [{ name: "PetroForge" }],
+  icons: {
+    icon: "/icon.svg",
+  },
   viewport: {
     width: "device-width",
     initialScale: 1,
