@@ -48,6 +48,7 @@ import uvicorn
 
 import analytics
 import css_cycle
+import hybrid_twin  # canonical Hybrid Twin assembly (P4, reuses canonical modules)
 import live_field
 from ml import synthetic_hazard  # canonical ML runtime (SYNTHETIC demo mode)
 import srp_dynacard
@@ -826,6 +827,41 @@ async def get_well_twin(well_id: str):
             detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
         )
     return twin_physics.twin_snapshot(record)
+
+
+@app.get("/api/v1/wells/{well_id}/twin/hybrid", tags=["Digital Twin"])
+async def get_well_hybrid_twin(well_id: str):
+    """Canonical Hybrid Twin view: observed + physics + calibrated +
+    divergence + diagnostics + separate ML evidence + recommendations.
+
+    Assembled only from canonical modules (twin_physics, analytics,
+    srp_dynacard, srp_performance, ml.synthetic_hazard). Physics is
+    primary; ML stays separate and synthetic; uncertainty UNAVAILABLE.
+    """
+    record = WELL_STORE.get(well_id)
+    if record is None:
+        if well_id in PUBLIC_WELLS:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "INSUFFICIENT_PUBLIC_TELEMETRY",
+                    "message": (
+                        f"Well '{well_id}' is a verified public record "
+                        "(PUBLIC_FIELD_RECORD) with no live telemetry: hybrid "
+                        "twin unavailable. Load synthetic demo telemetry "
+                        "to exercise the physics engine."
+                    ),
+                    "twin_data_status": "INSUFFICIENT_PUBLIC_TELEMETRY",
+                    "provenance": "BAGHEWALA_FIELD",
+                },
+            )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Well '{well_id}' not found. No telemetry has been ingested for this well_id.",
+        )
+    snapshot = twin_physics.twin_snapshot(record)
+    history = list(HISTORY.get(well_id, []))
+    return hybrid_twin.build_hybrid_twin(well_id, record, snapshot, history)
 
 
 def _applied_inputs(state) -> Dict:

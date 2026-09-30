@@ -9,6 +9,7 @@ import type {
   FieldOverview,
   HistoryPoint,
   HistoryResponse,
+  HybridTwinResponse,
   LiveStatus,
   MLAnomalyRequest,
   MLAnomalyResult,
@@ -89,6 +90,7 @@ export const api = {
   wells: () => request<WellsResponse>("/api/v1/wells"),
   well: (id: string) => request<WellTelemetry>(well(id)),
   twin: (id: string) => request<TwinSnapshot>(`${well(id)}/twin`),
+  hybridTwin: (id: string) => request<HybridTwinResponse>(`${well(id)}/twin/hybrid`),
   optimize: (id: string) => request<OptimizeResponse>(`${well(id)}/optimize`, post()),
   simulate: (id: string, overrides: ScenarioOverrides) =>
     request<SimulateResponse>(`${well(id)}/simulate`, post(overrides)),

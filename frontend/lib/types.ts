@@ -176,6 +176,99 @@ export interface OptimizeResponse {
 
 export type SnapshotDelta = OptimizeResponse["delta"];
 
+/* ---- P4: canonical Hybrid Twin view ---- */
+export interface HybridObserved {
+  well_id: string;
+  timestamp: string | null;
+  css_phase: string;
+  oil_rate_bopd: number | null;
+  reservoir_temperature_c: number | null;
+  reservoir_pressure_bar: number | null;
+  wellhead_pressure_bar: number | null;
+  spm: number | null;
+  stroke_in: number | null;
+  data_status: string;
+  provenance: string;
+}
+
+export interface HybridPhysics {
+  status: string;
+  mode: string;
+  prediction: {
+    oil_production_bopd: number;
+    reservoir_inflow_bopd: number;
+    pump_capacity_bopd: number;
+    limiting_factor: string;
+    temperature_c: number;
+    viscosity_cp: number;
+    mobility_factor: number;
+    steam_oil_ratio_t_per_bbl: number | null;
+    total_energy_kwh: number;
+    engineering_status: string;
+  };
+}
+
+export interface HybridCalibration {
+  status: string;
+  factor: number | null;
+  observations: number;
+  outliers_excluded?: number;
+  r2: number | null;
+  mape_percent: number | null;
+  explanation: string;
+}
+
+export interface HybridDivergence {
+  status: string;
+  value_bopd: number | null;
+  relative: number | null;
+  severity: string | null;
+  baseline: string | null;
+  timestamp?: string | null;
+  note: string;
+}
+
+export interface HybridDiagnostic {
+  code: string;
+  severity: string;
+  wording: string;
+  indicators: string[];
+  evidence: string[];
+  recommended_actions: string[];
+}
+
+export interface HybridMLEvidence {
+  status: string;
+  mode: string;
+  training_data: string;
+  production_safe: boolean;
+  predictions: Record<string, { probability: number; risk_band: string; horizon_days: number }>;
+  note: string;
+}
+
+export interface HybridRecommendation {
+  source: string;
+  severity: string;
+  text: string;
+}
+
+export interface HybridTwinResponse {
+  well_id: string;
+  mode: string;
+  data_status: string;
+  observed: HybridObserved;
+  physics: HybridPhysics;
+  calibration: HybridCalibration;
+  calibrated_prediction: { oil_production_bopd: number; factor: number; note: string } | null;
+  divergence: HybridDivergence;
+  diagnostics: HybridDiagnostic[];
+  ml_evidence: HybridMLEvidence;
+  recommendations: HybridRecommendation[];
+  provenance: { data_status: string; observed_provenance: string; physics_mode: string; ml_mode: string; note: string };
+  uncertainty: { status: string; note: string };
+  prototype_disclaimer: string;
+}
+
 export interface ScenarioOverrides {
   steam_volume_t?: number;
   steam_injection_pressure_bar?: number;

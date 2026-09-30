@@ -14,7 +14,7 @@ oil wells of Baghewala Field (Oil India Limited).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
-[![Pytest](https://img.shields.io/badge/Tests-319_passed-brightgreen.svg)](./project)
+[![Pytest](https://img.shields.io/badge/Tests-351_passed-brightgreen.svg)](./project)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
 [![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
@@ -222,6 +222,7 @@ project/
 | `GET` | `/api/v1/wells` | Merged list: telemetry + 5 publicly verified well records (bootstrap) |
 | `GET` | `/api/v1/wells/{well_id}` | Telemetry, or public-record envelope (`telemetry: null`) |
 | `GET` | `/api/v1/wells/{well_id}/twin` | Snapshot; `INSUFFICIENT_PUBLIC_TELEMETRY` for public-only wells |
+| `GET` | `/api/v1/wells/{well_id}/twin/hybrid` | Canonical Hybrid Twin: observed + physics + calibrated + divergence + diagnostics + separate ML evidence |
 | `POST` | `/api/v1/wells/{well_id}/simulate` | Side-effect-free what-if + deltas |
 | `POST` | `/api/v1/wells/{well_id}/optimize` | Joint grid search: recommended + top-5 + reasons |
 | `GET` | `/api/v1/wells/{well_id}/cycle` | CSS cycle series + optimal cut-off + cycle SOR |
@@ -254,12 +255,23 @@ routed through the same canonical runtime. `project/ml_models.py` is a
 deprecated re-export shim. Test registries are pytest-temporary; the tracked
 `project/ml/artifacts/registry.json` stays empty by default.
 
+### Hybrid Digital Twin (`GET /api/v1/wells/{id}/twin/hybrid`, Inspector HYBRID tab)
+
+One canonical assembly over existing modules — physics-first, no duplicated
+equations: observed telemetry → `twin_physics` prediction → `analytics`
+calibration (3+ production readings or explicit `INSUFFICIENT_DATA`) →
+measured-vs-expected divergence (calibrated baseline, else flagged raw) →
+`srp_dynacard` + `srp_performance` screening diagnostics → **separate**
+synthetic-hazard ML evidence → evidence-mapped recommendations. Uncertainty
+is explicitly `UNAVAILABLE`; public-only wells return
+`INSUFFICIENT_PUBLIC_TELEMETRY`.
+
 ## 12. 🧪 Testing & Validation
 
-**319/319 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
+**351/351 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
 + 18 public-recovery tests (registry, bootstrap, provenance separation, compat)
-+ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer + 16 CSS-multi-cycle + 21 SRP-performance tests
++ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer + 16 CSS-multi-cycle + 21 SRP-performance + 18 Hybrid-Twin tests
 + 26 Block 4 tests (`test_block4.py`: water cut, production cooling, VFD, dynacard,
 cycle cut-off optimality, planner, calibration incl. fault robustness, anomalies,
 decline fit, ML vs oracle AUC, simulator determinism, alerts latching, live tick,
@@ -284,7 +296,7 @@ python app.py
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
 - 3D twin dashboard: `cd frontend && npm install && npm run dev`, open http://localhost:3000/twin,
   click **Load synthetic field**, then **GO LIVE** (backend must be running on :8000)
-- Tests: `pytest -q` in `project/` (expect 333 passed)
+- Tests: `pytest -q` in `project/` (expect 351 passed)
 - Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
 
 ## 13b. 🌐 Production Deployment (Render + Vercel)

@@ -14,6 +14,7 @@ import type {
   TwinSnapshot,
   WellTelemetry,
   HistoryResponse,
+  HybridTwinResponse,
   WellCoverageSummary,
   MLStatus,
   MLForecastResult,
@@ -138,7 +139,7 @@ function ParetoSection({
 }
 
 type Tab =
-  | "OVERVIEW" | "WHAT-IF" | "CYCLE" | "SRP" | "HISTORY" | "ANALYTICS"
+  | "OVERVIEW" | "HYBRID" | "WHAT-IF" | "CYCLE" | "SRP" | "HISTORY" | "ANALYTICS"
   | "ML-RISK" | "ML-FIELD" | "OPTIMIZATION" | "PHYSICS" | "TELEMETRY";
 
 /* Per-object sections: future components expose data here without
@@ -267,6 +268,8 @@ export default function Inspector({
   const [tab, setTab] = useState<Tab>("OVERVIEW");
   const [paretoSel, setParetoSel] = useState<number | null>(null);
   const [historyData, setHistoryData] = useState<HistoryResponse | null>(null);
+  const [hybridData, setHybridData] = useState<HybridTwinResponse | null>(null);
+  const [hybridLoading, setHybridLoading] = useState(false);
   const [coverageData, setCoverageData] = useState<WellCoverageSummary | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [mlStatus, setMlStatus] = useState<MLStatus | null>(null);
@@ -276,11 +279,11 @@ export default function Inspector({
   const [mlFailure, setMlFailure] = useState<MLFailureResult | null>(null);
   const [mlLoading, setMlLoading] = useState(false);
   const tabs: Tab[] = [
-    "OVERVIEW", "WHAT-IF", "CYCLE", "SRP", "HISTORY", "ANALYTICS",
+    "OVERVIEW", "HYBRID", "WHAT-IF", "CYCLE", "SRP", "HISTORY", "ANALYTICS",
     "ML-RISK", "ML-FIELD", "OPTIMIZATION", "PHYSICS", "TELEMETRY",
   ];
   /* Compact segmented navigation: primary state row + systems row. */
-  const primaryTabs: Tab[] = ["OVERVIEW", "TELEMETRY", "HISTORY", "PHYSICS", "ML-RISK"];
+  const primaryTabs: Tab[] = ["OVERVIEW", "HYBRID", "TELEMETRY", "HISTORY", "PHYSICS", "ML-RISK"];
   const systemTabs: Tab[] = ["CYCLE", "SRP", "WHAT-IF", "ANALYTICS", "OPTIMIZATION", "ML-FIELD"];
   const allTabs: Tab[] = [...primaryTabs, ...systemTabs];
 
@@ -312,6 +315,18 @@ export default function Inspector({
         .finally(() => {
           setHistoryLoading(false);
         });
+    }
+  }, [tab, wellId]);
+
+  // Load hybrid twin view when HYBRID tab is selected
+  useEffect(() => {
+    if (tab === "HYBRID" && wellId) {
+      setHybridLoading(true);
+      api
+        .hybridTwin(wellId)
+        .then((h) => setHybridData(h))
+        .catch(() => setHybridData(null))
+        .finally(() => setHybridLoading(false));
     }
   }, [tab, wellId]);
 
@@ -788,6 +803,82 @@ export default function Inspector({
                 ) : (
                   <p className="text-xs text-slate-500 font-mono">
                     No historical data available for this well.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {tab === "HYBRID" && (
+              <div className="space-y-3">
+                {hybridLoading ? (
+                  <p className="text-xs text-slate-500 font-mono">Loading hybrid twin…</p>
+                ) : hybridData ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Pill level={hybridData.divergence.severity === "DIVERGED" ? "HIGH" : "LOW"} />
+                      <span className="text-[11px] font-mono text-slate-300">
+                        {hybridData.data_status} · {hybridData.mode}
+                      </span>
+                    </div>
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">OBSERVED → PHYSICS</h4>
+                      <Rows
+                        rows={[
+                          ["Observed oil", `${fmt(hybridData.observed.oil_rate_bopd)} BOPD`],
+                          ["Physics twin", `${fmt(hybridData.physics.prediction.oil_production_bopd)} BOPD (${hybridData.physics.prediction.limiting_factor})`],
+                          ["Calibrated", hybridData.calibrated_prediction
+                            ? `${fmt(hybridData.calibrated_prediction.oil_production_bopd)} BOPD (k=${fmt(hybridData.calibration.factor, 3)})`
+                            : `uncalibrated — ${hybridData.calibration.explanation}`],
+                          ["Divergence", hybridData.divergence.status === "CALCULATED"
+                            ? `${hybridData.divergence.value_bopd !== null ? (hybridData.divergence.value_bopd >= 0 ? "+" : "") + fmt(hybridData.divergence.value_bopd) : "—"} BOPD (${hybridData.divergence.severity}, ${hybridData.divergence.baseline} baseline)`
+                            : hybridData.divergence.note],
+                        ]}
+                      />
+                    </section>
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">DIAGNOSTICS (screening)</h4>
+                      <div className="space-y-1.5">
+                        {hybridData.diagnostics.map((d) => (
+                          <div key={d.code} className="flex items-center gap-2 text-[11px]">
+                            <Pill level={d.severity === "LOW" ? "LOW" : d.severity} />
+                            <span className="font-mono text-slate-300">{d.code.replace(/_/g, " ")}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">ML EVIDENCE (separate)</h4>
+                      <Rows
+                        rows={[
+                          ["Status", `${hybridData.ml_evidence.status} · mode ${hybridData.ml_evidence.mode}`],
+                          ...Object.entries(hybridData.ml_evidence.predictions).map(([name, p]): [string, string] => [
+                            name.replace(/_/g, " "),
+                            `${fmt(p.probability * 100, 1)}% (${p.risk_band}, synthetic demo)`,
+                          ]),
+                        ]}
+                      />
+                    </section>
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">RECOMMENDATION</h4>
+                      <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-400">
+                        {hybridData.recommendations.map((r, i) => (
+                          <li key={i}>
+                            <span className="font-mono text-slate-500">[{r.source}]</span> {r.text}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                    <section>
+                      <h4 className="text-[11px] font-bold text-slate-300 mb-1">PROVENANCE · UNCERTAINTY</h4>
+                      <p className="text-[10px] font-mono text-slate-500 leading-snug">{hybridData.provenance.note}</p>
+                      <p className="text-[10px] font-mono text-slate-500 leading-snug mt-1">
+                        Uncertainty: {hybridData.uncertainty.status} — {hybridData.uncertainty.note}
+                      </p>
+                    </section>
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500 font-mono">
+                    No hybrid twin available — public records without telemetry return insufficient-telemetry.
                   </p>
                 )}
               </div>
