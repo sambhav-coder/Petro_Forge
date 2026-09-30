@@ -14,7 +14,7 @@ oil wells of Baghewala Field (Oil India Limited).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
-[![Pytest](https://img.shields.io/badge/Tests-282_passed-brightgreen.svg)](./project)
+[![Pytest](https://img.shields.io/badge/Tests-298_passed-brightgreen.svg)](./project)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
 [![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
@@ -65,7 +65,7 @@ bounded grid search recommends a joint CSS × SRP scenario with value-traceable 
 
 | Problem statement asks for | What PetroForge now does | Module |
 |---|---|---|
-| CSS decisions: steam volume, soak time, **production cut-off** | Day-by-day CSS cycle through the twin (injection → soak → cooling production decline); **optimal cut-off** = day the cycle-average oil rate peaks; cycle SOR in bbl CWE/bbl; 25-plan steam × soak planner under an SOR ceiling | `css_cycle.py` |
+| CSS decisions: steam volume, soak time, **production cut-off** | Day-by-day CSS cycle through the twin (injection → soak → cooling production decline); **optimal cut-off** = day the cycle-average oil rate peaks; cycle SOR in bbl CWE/bbl; 25-plan steam × soak planner under an SOR ceiling; **multi-cycle outlook** (1–6 sequential cycles with propagated pressure depletion + residual heat, cumulative oil/steam/SOR, next-cycle recommendation) | `css_cycle.py` |
 | SRP: stroke, SPM, **VFD** | VFD ↔ SPM drive mapping; every simulate/optimize result carries an actionable **VFD setpoint** | `twin_physics.py`, `twin_optimize.py` |
 | Rod floating, impact loading, pump unsetting | Predicted **surface dynamometer card** (API 11L rods, Mills acceleration, 0.340·SG·D²·H fluid load, viscous drag at tubing temperature, modified Goodman) → FLUID POUND / ROD FLOAT / ROD OVERLOAD diagnosis | `srp_dynacard.py` |
 | **Predictive analytics** | Twin **auto-calibration** (robust least-squares scale factor, MAPE before/after), **anomaly detection** (median/MAD z-score + engineering deadbands + calibrated-twin divergence), **Arps decline forecast** | `analytics.py` |
@@ -82,7 +82,7 @@ noise-only alerts; model AUC matches the oracle ceiling (rod 0.727 vs 0.729, uns
 
 **Dashboard (Next.js, `frontend/`).** The 3D twin inspector gains WHAT-IF sliders (steam,
 pressure, soak, VFD, stroke, water cut), CYCLE (decline curve + cut-off + planner
-heat-map), SRP (dynacard + diagnosis), ANALYTICS (measured vs calibrated twin, decline
+heat-map + multi-cycle outlook with cumulative metrics and next-cycle recommendation), SRP (dynacard + diagnosis), ANALYTICS (measured vs calibrated twin, decline
 forecast, anomalies) and ML (probabilities, drivers, risk trend, model card). The top bar has
 field KPIs, a **GO LIVE** toggle and an alerts drawer.
 
@@ -226,6 +226,7 @@ project/
 | `POST` | `/api/v1/wells/{well_id}/optimize` | Joint grid search: recommended + top-5 + reasons |
 | `GET` | `/api/v1/wells/{well_id}/cycle` | CSS cycle series + optimal cut-off + cycle SOR |
 | `POST` | `/api/v1/wells/{well_id}/cycle/plan` | Steam × soak planner under an SOR ceiling |
+| `POST` | `/api/v1/wells/{well_id}/cycle/multi` | Multi-cycle outlook (1–6 cycles, propagated state, cumulative SOR, next-cycle recommendation) |
 | `GET` | `/api/v1/wells/{well_id}/dynacard` | Predicted dynamometer card, rod loads, diagnosis |
 | `GET` | `/api/v1/wells/{well_id}/predict` | 30-day rod-failure / pump-unsetting probabilities + drivers |
 | `GET` | `/api/v1/ml/model` | Model card: data statement, coefficients, holdout + oracle metrics |
@@ -255,10 +256,10 @@ deprecated re-export shim. Test registries are pytest-temporary; the tracked
 
 ## 12. 🧪 Testing & Validation
 
-**282/282 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
+**298/298 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
 + 18 public-recovery tests (registry, bootstrap, provenance separation, compat)
-+ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer tests
++ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer + 16 CSS-multi-cycle tests
 + 26 Block 4 tests (`test_block4.py`: water cut, production cooling, VFD, dynacard,
 cycle cut-off optimality, planner, calibration incl. fault robustness, anomalies,
 decline fit, ML vs oracle AUC, simulator determinism, alerts latching, live tick,
@@ -283,7 +284,7 @@ python app.py
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
 - 3D twin dashboard: `cd frontend && npm install && npm run dev`, open http://localhost:3000/twin,
   click **Load synthetic field**, then **GO LIVE** (backend must be running on :8000)
-- Tests: `pytest -q` in `project/` (expect 282 passed)
+- Tests: `pytest -q` in `project/` (expect 298 passed)
 - Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
 
 ## 14. 🐳 Docker

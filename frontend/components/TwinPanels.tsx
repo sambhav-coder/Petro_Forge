@@ -9,6 +9,7 @@ import type {
   CycleResponse,
   DynacardResponse,
   HistoryPoint,
+  MultiCycleResponse,
   PredictResponse,
   ScenarioOverrides,
   SimulateResponse,
@@ -318,7 +319,97 @@ export function CyclePanel({ wellId, refreshKey }: { wellId: string; refreshKey:
           </div>
         )}
       </Section>
+
+      <MultiCycleSection wellId={wellId} />
     </div>
+  );
+}
+
+/* ======================= CSS MULTI-CYCLE OUTLOOK ======================= */
+
+export function MultiCycleSection({ wellId }: { wellId: string }) {
+  const [multi, setMulti] = useState<MultiCycleResponse | null>(null);
+  const [running, setRunning] = useState(false);
+  const [multiErr, setMultiErr] = useState<string | null>(null);
+  useEffect(() => {
+    setMulti(null);
+    setMultiErr(null);
+  }, [wellId]);
+
+  const runMulti = async () => {
+    setRunning(true);
+    setMultiErr(null);
+    try {
+      setMulti(await api.cycleMulti(wellId, 3));
+    } catch (e) {
+      setMultiErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <Section title="MULTI-CYCLE OUTLOOK (prototype)">
+      <PrimaryButton onClick={runMulti} disabled={running}>
+        {running ? "Simulating 3 cycles…" : "RUN 3-CYCLE OUTLOOK"}
+      </PrimaryButton>
+      {multiErr && <ErrorLine error={multiErr} />}
+      {multi && (
+        <div className="space-y-2">
+          <LineChart
+            height={110}
+            xLabel="cycle"
+            yLabel="bbl"
+            series={[
+              {
+                name: "cycle oil",
+                color: "#f5a524",
+                points: multi.cycles.map((c) => [c.cycle_number, c.cycle_oil_bbl]),
+              },
+              {
+                name: "cumulative oil",
+                color: "#34d399",
+                points: multi.cycles.map((c, i) => [
+                  c.cycle_number,
+                  multi.cycles.slice(0, i + 1).reduce((s, x) => s + x.cycle_oil_bbl, 0),
+                ]),
+              },
+            ]}
+          />
+          {multi.cycles.map((c) => (
+            <div key={c.cycle_number} className="font-mono text-[11px] flex justify-between text-slate-300">
+              <span>
+                C{c.cycle_number} {fmt(c.planned.steam_volume_t, 0)}t/{fmt(c.planned.soak_time_h, 0)}h/d
+                {c.planned.optimal_cutoff_production_day}
+              </span>
+              <span>
+                {fmt(c.cycle_oil_bbl, 0)} bbl · SOR {fmt(c.cycle_sor_cwe, 2)} · P{" "}
+                {fmt(c.state_out.reservoir_pressure_bar, 2)} bar
+              </span>
+            </div>
+          ))}
+          <div className="rounded-lg border border-leaf/40 bg-leaf/10 p-2 text-xs font-mono space-y-0.5">
+            <div className="text-leaf font-bold">
+              NEXT CYCLE {multi.recommendation.next_cycle_number} · {fmt(multi.recommendation.steam_volume_t, 0)} t ·{" "}
+              {fmt(multi.recommendation.soak_time_h, 0)} h · cut-off d{multi.recommendation.optimal_cutoff_production_day}
+            </div>
+            <div className="text-slate-300">
+              Cumulative {fmt(multi.cumulative.total_oil_bbl, 0)} bbl / {fmt(multi.cumulative.total_steam_t, 0)} t ·
+              SOR {fmt(multi.cumulative.cumulative_sor_cwe, 2)} CWE
+            </div>
+            <ul className="list-disc pl-4 space-y-0.5 text-slate-400 text-[11px]">
+              {multi.recommendation.reasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          </div>
+          <p className="text-[10px] font-mono text-slate-500">
+            {multi.data_mode} · history: {multi.historical_context.status} ({multi.historical_context.prior_css_events}{" "}
+            prior event(s)) · {multi.linkage.note}
+          </p>
+        </div>
+      )}
+    </Section>
   );
 }
 

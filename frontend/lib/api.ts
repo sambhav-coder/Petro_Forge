@@ -3,6 +3,7 @@ import type {
   AnalyticsResponse,
   CyclePlanResponse,
   CycleResponse,
+  MultiCycleResponse,
   DataSummary,
   DynacardResponse,
   FieldOverview,
@@ -65,6 +66,8 @@ export const api = {
     request<SimulateResponse>(`${well(id)}/simulate`, post(overrides)),
   cycle: (id: string) => request<CycleResponse>(`${well(id)}/cycle`),
   cyclePlan: (id: string) => request<CyclePlanResponse>(`${well(id)}/cycle/plan`, post()),
+  cycleMulti: (id: string, cycles = 3) =>
+    request<MultiCycleResponse>(`${well(id)}/cycle/multi`, post({ cycles })),
   dynacard: (id: string) => request<DynacardResponse>(`${well(id)}/dynacard`),
   predict: (id: string) => request<PredictResponse>(`${well(id)}/predict`),
   wellHistory: (id: string, limit = 240) =>

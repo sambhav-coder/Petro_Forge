@@ -1616,6 +1616,17 @@ class CyclePlanRequest(BaseModel):
     sor_limit_cwe: float = Field(default=css_cycle.SOR_CWE_LIMIT, gt=0.0, le=50.0)
 
 
+class MultiCycleRequest(BaseModel):
+    """Multi-cycle outlook request: sequential cycles with propagated state."""
+
+    cycles: int = Field(default=3, ge=1, le=6)
+    steam_grid_t: Optional[List[Annotated[float, Field(ge=0.0, le=100000.0)]]] = Field(
+        default=None, min_length=1, max_length=8)
+    soak_grid_h: Optional[List[Annotated[float, Field(ge=0.0, le=720.0)]]] = Field(
+        default=None, min_length=1, max_length=8)
+    sor_limit_cwe: float = Field(default=css_cycle.SOR_CWE_LIMIT, gt=0.0, le=50.0)
+
+
 class LiveStartRequest(BaseModel):
     interval_s: float = Field(default=2.0, ge=0.2, le=60.0)
     hours_per_tick: float = Field(default=live_field.DEFAULT_HOURS_PER_TICK, ge=1.0, le=72.0)
@@ -1637,6 +1648,30 @@ async def well_cycle_plan(well_id: str, request: Optional[CyclePlanRequest] = No
     req = request or CyclePlanRequest()
     return css_cycle.plan_cycle(_require_well(well_id), req.steam_grid_t, req.soak_grid_h,
                                 req.sor_limit_cwe)
+
+
+@app.post("/api/v1/wells/{well_id}/cycle/multi", tags=["CSS Cycle"])
+async def well_cycle_multi(well_id: str, request: Optional[MultiCycleRequest] = None):
+    """Sequential multi-cycle outlook with propagated reservoir state.
+
+    Each cycle is planned on the state left by the previous cycle
+    (pressure depletion + residual heat, prototype linkage), with
+    cumulative oil/steam/SOR and a next-cycle recommendation. Historical
+    CSS context is attached explicitly; sparse public records always
+    report INSUFFICIENT_DATA for response calibration.
+    """
+    req = request or MultiCycleRequest()
+    record = _require_well(well_id)
+    hist_obs = _HISTORY_REPO.query(well_id=well_id, include_derived=True,
+                                   include_synthetic=True, include_live=True,
+                                   limit=1000)
+    try:
+        return css_cycle.simulate_multicycle(
+            record, cycles=req.cycles, steam_grid=req.steam_grid_t,
+            soak_grid=req.soak_grid_h, sor_limit=req.sor_limit_cwe,
+            historical_observations=hist_obs)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
 
 @app.get("/api/v1/wells/{well_id}/dynacard", tags=["SRP Diagnostics"])

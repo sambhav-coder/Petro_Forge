@@ -250,6 +250,52 @@ export interface CyclePlanResponse {
   explanation: string;
 }
 
+export interface MultiCycleEntry {
+  cycle_number: number;
+  planned: { steam_volume_t: number; soak_time_h: number; optimal_cutoff_production_day: number };
+  state_in: { reservoir_pressure_bar: number; reservoir_temperature_c: number };
+  peak_heated_temperature_c: number;
+  cycle_oil_bbl: number;
+  cycle_steam_t: number;
+  cycle_length_days: number;
+  average_cycle_rate_bopd: number;
+  cycle_sor_t_per_bbl: number | null;
+  cycle_sor_cwe: number | null;
+  incremental_oil_bbl: number;
+  state_out: { reservoir_pressure_bar: number; reservoir_temperature_c: number };
+}
+
+export interface MultiCycleResponse {
+  well_id: string;
+  mode: string;
+  data_mode: string;
+  cycles_requested: number;
+  sor_limit_cwe: number;
+  initial_state: { reservoir_pressure_bar: number; reservoir_temperature_c: number };
+  linkage: { pressure_depletion_bar_per_bbl: number; heat_carryover_frac: number; note: string };
+  historical_context: { prior_css_events: number; usable_response_data: boolean; status: string; note: string };
+  cycles: MultiCycleEntry[];
+  cumulative: {
+    cycles_simulated: number;
+    total_oil_bbl: number;
+    total_steam_t: number;
+    cumulative_sor_t_per_bbl: number | null;
+    cumulative_sor_cwe: number | null;
+  };
+  recommendation: {
+    next_cycle_number: number;
+    steam_volume_t: number;
+    soak_time_h: number;
+    optimal_cutoff_production_day: number;
+    expected_average_rate_bopd: number;
+    expected_cycle_sor_cwe: number | null;
+    reasons: string[];
+    policy: string;
+  };
+  limitations: string[];
+  prototype_disclaimer: string;
+}
+
 /* ---- Block 4: SRP dynacard ---- */
 export interface Diagnosis {
   code: string;
