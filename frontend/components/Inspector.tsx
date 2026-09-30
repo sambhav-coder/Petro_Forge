@@ -130,6 +130,9 @@ export default function Inspector({
   onIsolate,
   onShowAll,
   refreshKey,
+  onClose,
+  forceTab,
+  onTabConsumed,
 }: {
   selection: SceneSelection | null;
   wellId: string | null;
@@ -143,6 +146,9 @@ export default function Inspector({
   onIsolate: (kind: IsolatableKind) => void;
   onShowAll: () => void;
   refreshKey: number;
+  onClose?: () => void;
+  forceTab?: string | null;
+  onTabConsumed?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("OVERVIEW");
   const [historyData, setHistoryData] = useState<HistoryResponse | null>(null);
@@ -158,6 +164,19 @@ export default function Inspector({
     "OVERVIEW", "WHAT-IF", "CYCLE", "SRP", "HISTORY", "ANALYTICS",
     "ML-RISK", "ML-FIELD", "OPTIMIZATION", "PHYSICS", "TELEMETRY",
   ];
+  /* Compact segmented navigation: primary state row + systems row. */
+  const primaryTabs: Tab[] = ["OVERVIEW", "TELEMETRY", "HISTORY", "PHYSICS", "ML-RISK"];
+  const systemTabs: Tab[] = ["CYCLE", "SRP", "WHAT-IF", "ANALYTICS", "OPTIMIZATION", "ML-FIELD"];
+  const allTabs: Tab[] = [...primaryTabs, ...systemTabs];
+
+  // Command-dock forced tab: jump once, then release back to manual control.
+  useEffect(() => {
+    if (forceTab && (allTabs as string[]).includes(forceTab)) {
+      setTab(forceTab as Tab);
+      onTabConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forceTab]);
 
   // Load historical data when HISTORY tab is selected
   useEffect(() => {
@@ -213,7 +232,16 @@ export default function Inspector({
   }, [tab, wellId, telemetry]);
 
   return (
-    <aside className="glass rounded-none border-l border-slate-700/40 w-[400px] shrink-0 flex flex-col min-h-0">
+    <aside className="glass rounded-none border-l border-slate-700/40 w-[400px] shrink-0 flex flex-col min-h-0 relative">
+      {onClose && (
+        <button
+          onClick={onClose}
+          aria-label="Close panel"
+          className="absolute top-2 right-2 z-10 px-2 py-1 rounded-md text-[11px] font-mono text-slate-500 hover:text-cream-soft hover:bg-slate-700/50 border border-transparent hover:border-slate-600/60"
+        >
+          ✕
+        </button>
+      )}
       <div className="px-4 pt-4 pb-2">
         {!selection || !wellId ? (
           <div>
@@ -260,20 +288,41 @@ export default function Inspector({
         )}
       </div>
 
-      <div className="flex gap-1 px-3 overflow-x-auto scroll-thin border-b border-slate-700/40">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-2.5 py-2 text-[10px] font-mono font-bold whitespace-nowrap border-b-2 transition-colors ${
-              tab === t
-                ? "border-teal-300 text-teal-200"
-                : "border-transparent text-slate-500 hover:text-slate-300"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
+      <div className="border-b border-slate-700/40" role="tablist" aria-label="Inspector sections">
+        <div className="flex gap-1 px-3 overflow-x-auto scroll-thin" role="group" aria-label="Primary state">
+          {primaryTabs.map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`px-2.5 py-2 text-[10px] font-mono font-bold whitespace-nowrap border-b-2 transition-colors ${
+                tab === t
+                  ? "border-teal-300 text-teal-200"
+                  : "border-transparent text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 px-3 overflow-x-auto scroll-thin bg-slate-900/40" role="group" aria-label="Systems">
+          {systemTabs.map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`px-2 py-1.5 text-[9px] font-mono font-bold whitespace-nowrap border-b-2 transition-colors ${
+                tab === t
+                  ? "border-amber-warm/70 text-amber-200"
+                  : "border-transparent text-slate-600 hover:text-slate-300"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto scroll-thin p-4 space-y-4 min-h-0">

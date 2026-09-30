@@ -2,9 +2,27 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PetroForge — 3D Digital Twin (SIH26120)",
+  title: "PETROFORGE — Physics × AI × Digital Twin",
   description:
-    "Physics + AI Digital Twin for well-to-surface optimization of CSS and SRP operations in heavy oil wells.",
+    "PetroForge: Premium industrial digital twin platform for well-to-surface optimization of Cyclic Steam Stimulation and SRP operations in heavy oil reservoirs.",
+  keywords: [
+    "digital twin",
+    "oil and gas",
+    "cyclic steam stimulation",
+    "CSS",
+    "SRP",
+    "sucker rod pump",
+    "heavy oil",
+    "reservoir optimization",
+    "physics simulation",
+    "AI forecasting",
+  ],
+  authors: [{ name: "PetroForge" }],
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 5,
+  },
 };
 
 export default function RootLayout({
@@ -14,7 +32,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#070b14] font-sans antialiased">
+      <body className="min-h-screen bg-oil-black text-cream-soft antialiased font-sans">
         {children}
       </body>
     </html>
