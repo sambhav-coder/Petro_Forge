@@ -304,6 +304,10 @@ export interface ModelCard {
 
 export interface PredictResponse {
   well_id: string;
+  mode?: string;
+  training_data?: string;
+  production_safe?: boolean;
+  provenance?: string;
   predictions: Record<"rod_failure" | "pump_unsetting", Prediction>;
   features: Record<string, number>;
   dynacard_diagnosis: string;
@@ -312,6 +316,8 @@ export interface PredictResponse {
     holdout_samples: number;
     label_source: string;
     data_statement: string;
+    mode?: string;
+    production_safe?: boolean;
     models: ModelCard[];
   };
 }
@@ -383,6 +389,7 @@ export interface Alert {
   detail: string;
   acknowledged: boolean;
   active: boolean;
+  model_mode?: string;
 }
 
 export interface AlertsResponse {

@@ -17,7 +17,7 @@ Version: 1.0
 Priority: 3
 """
 
-from .config import MLConfig
+from .config import MLConfig, ModelTask
 from .schemas import (
     MLEligibility,
     DatasetValidationReport,
@@ -53,6 +53,7 @@ from .provenance import (
 __all__ = [
     # Configuration
     "MLConfig",
+    "ModelTask",
     # Schemas
     "MLEligibility",
     "DatasetValidationReport",

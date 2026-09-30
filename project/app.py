@@ -20,7 +20,8 @@ BLOCK 4: CSS cycle simulation + cut-off planning (css_cycle.py), synthetic
 SRP dynamometer card (srp_dynacard.py), per-well history with twin
 auto-calibration / anomaly detection / decline forecast (analytics.py),
 failure-probability models trained on a documented synthetic hazard model
-(ml_models.py), and real-time monitoring: live synthetic field
+(ml.synthetic_hazard, canonical project/ml runtime, SYNTHETIC demo mode),
+and real-time monitoring: live synthetic field
 (live_field.py), Server-Sent Events stream, and alerts.
 
 Explicitly NOT implemented: persistent database, auth, field control.
@@ -48,7 +49,7 @@ import uvicorn
 import analytics
 import css_cycle
 import live_field
-import ml_models
+from ml import synthetic_hazard  # canonical ML runtime (SYNTHETIC demo mode)
 import srp_dynacard
 import twin_physics
 import twin_optimize
@@ -455,7 +456,7 @@ _ALERT_SEQ = 0
 _SUBSCRIBERS: List[asyncio.Queue] = []  # SSE listeners
 LIVE: Dict[str, Any] = {"sim": None, "task": None, "interval_s": 2.0}
 
-ML_ALERT_PROB = ml_models.PROB_HIGH
+ML_ALERT_PROB = synthetic_hazard.PROB_HIGH
 
 
 def reset_block1_state() -> None:
@@ -482,7 +483,7 @@ def _broadcast(event: Dict) -> None:
 
 
 def _raise_alert(well_id: str, ts: str, kind: str, severity: str, title: str, detail: str,
-                 persistent: bool = True) -> Optional[Dict]:
+                 persistent: bool = True, extra: Optional[Dict] = None) -> Optional[Dict]:
     """Record an alert. Persistent conditions alert once until they clear."""
     global _ALERT_SEQ
     key = (well_id, kind)
@@ -494,6 +495,8 @@ def _raise_alert(well_id: str, ts: str, kind: str, severity: str, title: str, de
         "type": kind, "severity": severity, "title": title, "detail": detail,
         "acknowledged": False, "active": persistent,
     }
+    if extra:
+        alert.update(extra)
     ALERTS.append(alert)
     if persistent:
         _ACTIVE_ALERT_KEYS[key] = alert["alert_id"]
@@ -515,9 +518,9 @@ def _evaluate_alerts(state, snapshot: Dict, card: Dict, pred: Dict,
     producing = state.css_phase == CSSPhase.PRODUCTION
     raised = []
 
-    def cond(kind, active, severity, title, detail):
+    def cond(kind, active, severity, title, detail, extra=None):
         if active:
-            a = _raise_alert(well, ts, kind, severity, title, detail)
+            a = _raise_alert(well, ts, kind, severity, title, detail, extra=extra)
             if a:
                 raised.append(a)
         else:
@@ -533,7 +536,8 @@ def _evaluate_alerts(state, snapshot: Dict, card: Dict, pred: Dict,
         cond(f"ML_{name.upper()}", producing and p["probability"] >= ML_ALERT_PROB, "HIGH",
              f"{name.replace('_', ' ').title()} risk {p['probability'] * 100:.0f}% (next {p['horizon_days']} d)",
              "Top drivers: " + ", ".join(
-                 f"{d['label']} ({d['direction']})" for d in p["top_drivers"][:2]))
+                 f"{d['label']} ({d['direction']})" for d in p["top_drivers"][:2]),
+             extra={"model_mode": pred.get("mode", "SYNTHETIC")})
     # Anomalies on the newest reading; latched per metric so an ongoing fault alerts once.
     window = history[-(analytics.ANOMALY_WINDOW + 1):]
     newest = {(an["type"], an["metric"]): an
@@ -575,7 +579,7 @@ def _ingest_state(payload, source: str = "API") -> Dict:
 
     snapshot = twin_physics.twin_snapshot(state)
     card = srp_dynacard.dynacard(snapshot, state.api_gravity)
-    pred = ml_models.predict(state)
+    pred = synthetic_hazard.predict(state)
 
     hist = HISTORY.setdefault(state.well_id, deque(maxlen=HISTORY_MAX))
     hist.append({
@@ -1623,14 +1627,21 @@ async def well_dynacard(well_id: str):
 
 @app.get("/api/v1/wells/{well_id}/predict", tags=["Predictive Models"])
 async def well_predict(well_id: str):
-    """30-day rod-failure / pump-unsetting probabilities with feature attributions."""
-    return ml_models.predict(_require_well(well_id))
+    """30-day rod-failure / pump-unsetting probabilities with feature attributions.
+
+    Compatibility shim: routes to the canonical ml.synthetic_hazard runtime.
+    Demonstration output (mode=SYNTHETIC), not field-validated intelligence.
+    """
+    return synthetic_hazard.predict(_require_well(well_id))
 
 
 @app.get("/api/v1/ml/model", tags=["Predictive Models"])
 async def ml_model_card():
-    """Model card: training data statement, coefficients, holdout metrics."""
-    return ml_models.model_info()
+    """Model card: training data statement, coefficients, holdout metrics.
+
+    Compatibility shim over the canonical ml.synthetic_hazard runtime.
+    """
+    return synthetic_hazard.model_info()
 
 
 @app.get("/api/v1/wells/{well_id}/history", tags=["Analytics"])

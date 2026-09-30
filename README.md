@@ -14,7 +14,7 @@ oil wells of Baghewala Field (Oil India Limited).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
-[![Pytest](https://img.shields.io/badge/Tests-103_passed-brightgreen.svg)](./project)
+[![Pytest](https://img.shields.io/badge/Tests-267_passed-brightgreen.svg)](./project)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
 [![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
@@ -234,12 +234,25 @@ project/
 | `POST` | `/api/v1/action/dispatch` | Legacy acknowledgement (no field commands) |
 | `GET` | `/docs` | Swagger UI |
 
+### ML runtime (canonical: `project/ml/`)
+
+Live ingest runs telemetry → physics snapshot → dynacard → **canonical ML**
+(`ml.synthetic_hazard`) → calibration/analytics → alerts → SSE. Every failure-risk
+output carries an explicit synthetic envelope (`mode: SYNTHETIC`,
+`training_data: synthetic`, `production_safe: false`): no Baghewala failure
+history is public, so these are demonstration probabilities, never
+field-validated intelligence. `/api/v1/ml/*` is the canonical ML surface;
+`/api/v1/wells/{id}/predict` and `/api/v1/ml/model` are compatibility shims
+routed through the same canonical runtime. `project/ml_models.py` is a
+deprecated re-export shim. Test registries are pytest-temporary; the tracked
+`project/ml/artifacts/registry.json` stays empty by default.
+
 ## 12. 🧪 Testing & Validation
 
-**238/238 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
+**267/267 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
 + 18 public-recovery tests (registry, bootstrap, provenance separation, compat)
-+ Priority 1-3 hardening, historical-engine and ML-intelligence suites
++ 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification tests
 + 26 Block 4 tests (`test_block4.py`: water cut, production cooling, VFD, dynacard,
 cycle cut-off optimality, planner, calibration incl. fault robustness, anomalies,
 decline fit, ML vs oracle AUC, simulator determinism, alerts latching, live tick,
@@ -264,7 +277,7 @@ python app.py
 - Dashboard (needs backend running): `python -m http.server 8080` in `project/`, open http://localhost:8080, click **Load BGW-DEMO baseline**
 - 3D twin dashboard: `cd frontend && npm install && npm run dev`, open http://localhost:3000/twin,
   click **Load synthetic field**, then **GO LIVE** (backend must be running on :8000)
-- Tests: `pytest -q` in `project/` (expect 238 passed)
+- Tests: `pytest -q` in `project/` (expect 267 passed)
 - Data docs: `project/data_catalog/README.md` (sources, schemas, quality, synthetic strategy)
 
 ## 14. 🐳 Docker

@@ -35,6 +35,14 @@ export default function AlertsDrawer({
             </button>
             <span className="text-[10px] font-mono text-slate-500">{a.timestamp.slice(5, 16).replace("T", " ")}</span>
             {a.active && <span className="text-[9px] font-mono text-rose-300">ACTIVE</span>}
+            {a.model_mode && (
+              <span
+                className="text-[9px] font-mono px-1 py-px rounded border border-amber-500/40 text-amber-300"
+                title="Demonstration model output — not field-validated intelligence"
+              >
+                {a.model_mode}
+              </span>
+            )}
             <div className="flex-1" />
             {!a.acknowledged && (
               <button

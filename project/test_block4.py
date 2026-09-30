@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 import analytics
 import css_cycle
 import live_field
-import ml_models
+from ml import synthetic_hazard
 import srp_dynacard as dc
 import twin_physics as tp
 
@@ -191,7 +191,7 @@ def test_decline_forecast_fits_exponential():
 # ---------------- ML ----------------
 
 def test_models_train_with_useful_holdout_metrics():
-    info = ml_models.model_info()
+    info = synthetic_hazard.model_info()
     assert info["label_source"] == "SYNTHETIC_HAZARD_MODEL"
     for m in info["models"]:
         # Labels are Bernoulli draws, so even the true hazard cannot rank them perfectly:
@@ -202,8 +202,8 @@ def test_models_train_with_useful_holdout_metrics():
 
 
 def test_predictions_are_probabilities_and_directional():
-    hot = ml_models.predict(state())
-    bad = ml_models.predict(cold_fast())
+    hot = synthetic_hazard.predict(state())
+    bad = synthetic_hazard.predict(cold_fast())
     for name in ("rod_failure", "pump_unsetting"):
         for r in (hot, bad):
             assert 0.0 <= r["predictions"][name]["probability"] <= 1.0
@@ -212,7 +212,7 @@ def test_predictions_are_probabilities_and_directional():
 
 
 def test_ml_is_deterministic():
-    assert ml_models.predict(state()) == ml_models.predict(state())
+    assert synthetic_hazard.predict(state()) == synthetic_hazard.predict(state())
 
 
 # ---------------- live field ----------------

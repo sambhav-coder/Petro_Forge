@@ -505,6 +505,14 @@ export function MlPanel({ wellId, refreshKey }: { wellId: string; refreshKey: nu
 
   return (
     <div className="space-y-4">
+      {pred.mode && (
+        <div
+          className="text-[10px] font-mono px-2 py-1.5 rounded-lg border border-amber-500/40 text-amber-300 bg-amber-500/10"
+          title="Demonstration model output trained on synthetic hazard labels — not field-validated intelligence"
+        >
+          {pred.mode} DEMO MODEL · not field-validated · not production-safe
+        </div>
+      )}
       {(["rod_failure", "pump_unsetting"] as const).map((name) => {
         const p = pred.predictions[name];
         const card = pred.model_info.models.find((m) => m.name === name);
