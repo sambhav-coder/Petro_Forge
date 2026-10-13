@@ -14,7 +14,7 @@ oil wells of Baghewala Field (Oil India Limited).
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST-009688.svg)](https://fastapi.tiangolo.com)
-[![Pytest](https://img.shields.io/badge/Tests-369_passed-brightgreen.svg)](./project)
+[![Pytest](https://img.shields.io/badge/Tests-379_passed-brightgreen.svg)](./project)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](./project/docker-compose.yml)
 [![SIH 26120](https://img.shields.io/badge/SIH-26120-orange.svg)](https://sih.gov.in)
 
@@ -280,14 +280,15 @@ field control.
 
 ## 12. 🧪 Testing & Validation
 
-**369/369 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
+**379/379 tests passing** (`pytest -q` in `project/`): 19 telemetry/API regression + 21 physics
 directional-behavior + 16 simulation/optimizer tests + 29 data-foundation tests
 + 18 public-recovery tests (registry, bootstrap, provenance separation, compat)
 + 25 Priority-1 hardening + 43 historical-engine + 62 ML-intelligence + 8 ML-unification + 15 Pareto-optimizer + 16 CSS-multi-cycle + 21 SRP-performance + 18 Hybrid-Twin + 18 Control-Room tests
 + 26 Block 4 tests (`test_block4.py`: water cut, production cooling, VFD, dynacard,
 cycle cut-off optimality, planner, calibration incl. fault robustness, anomalies,
 decline fit, ML vs oracle AUC, simulator determinism, alerts latching, live tick,
-SSE stream, ingest contract, synthetic IDs never reuse public well IDs).
+SSE stream, ingest contract, synthetic IDs never reuse public well IDs)
++ 10 monitoring tests (`test_monitoring.py`: Render healthy/non-200/timeout/invalid/unexpected, Supabase missing-config/success/failure, no-writes, no-secrets — all mocked, no live credentials).
 Additionally validated live: 38/38 end-to-end
 checks (full journey, physics directionals A–H, risk reproducibility, 243-grid,
 404/422 handling) and 9/9 dashboard contract checks.
@@ -334,6 +335,72 @@ only (never `*`); browser credentials stay off (no cookie/token auth exists).
 (no trailing slash needed); CORS blocked → origin must be allow-listed
 (`project/deploy_config.py`); blank twin → backend asleep, retry after
 cold start; `NEXT_PUBLIC_*` must never hold secrets.
+
+## 13c. 🤖 External Monitoring & Keep-Alive (GitHub Actions)
+
+**Why it exists.** The Render free tier sleeps after 15 minutes without inbound
+traffic (cold start ≈ 1 min on next request), and a Supabase free project (if
+the owner ever attaches one — none is integrated today) pauses after ~7 days of
+low database activity. Nobody should have to open PetroForge daily to keep it
+responsive. Two small external scheduled workflows (`.github/workflows/`)
+therefore probe the deployment from the outside — the scheduler deliberately
+lives in GitHub Actions, not inside the Render app, so monitoring continues
+even while Render itself is asleep. Scripts are dependency-free Python stdlib
+(`.github/scripts/`); recurring cost is one tiny GET per run.
+
+| Workflow | Schedule (UTC) | Target | Secrets |
+|---|---|---|---|
+| `render-health-monitor.yml` | ~every 10 min (`7,17,27,37,47,57 * * * *`) | `GET https://petro-forge.onrender.com/healthz` | none |
+| `supabase-activity-monitor.yml` | daily ~03:17 UTC (`17 3 * * *`) | `GET {SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=*&limit=1` | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_TABLE` |
+
+**Render check:** single attempt, 90 s timeout (cold-start tolerant — a
+slow-but-200 response is HEALTHY with its latency logged, never confused with
+an outage), validates HTTP 200 + JSON `{"status": "ok"}`. Logs timestamp, HTTP
+code and latency; fails the run on UNAVAILABLE / TIMEOUT / INVALID_RESPONSE.
+No retries in a tight loop, no expensive calls, no data modified, no secrets
+involved. Outcomes: HEALTHY / UNAVAILABLE / TIMEOUT / INVALID_RESPONSE.
+
+**Supabase check:** one genuine read-only single-row SELECT per day (idempotent;
+no inserts/updates/deletes, no migrations, no new tables). Success is reported
+ONLY if the query itself returns HTTP 200 with a valid row array — a reachable
+URL with a failing query is DATABASE_QUERY_FAILED, never success. Outcomes:
+HEALTHY / UNAVAILABLE / TIMEOUT / INVALID_RESPONSE / CONFIGURATION_MISSING /
+DATABASE_QUERY_FAILED.
+
+> **Current state (verified 2026-10-13):** this backend has **no Supabase
+> integration** — storage is in-memory, and no Supabase URL/key/table or RLS
+> policy exists in the codebase. Until the owner creates a Supabase project +
+> readable table and sets the three repository secrets (Settings → Secrets and
+> variables → Actions), every Supabase run reports CONFIGURATION_MISSING with
+> the exact owner action. Use the **anon/publishable key only** (read-only via
+> an anon-SELECT RLS policy) — never the service-role key for keep-alive, never
+> weaken RLS, never add privileged writes to dodge pausing. Never commit real
+> secret values; never put database credentials in `NEXT_PUBLIC_*` variables.
+
+**Manual test:** Actions tab → pick the workflow → *Run workflow*
+(`workflow_dispatch`). Render: confirm `/healthz` reached, validation + latency
+logged. Supabase (after secrets are set): confirm the read succeeds and that no
+records were created, modified or deleted.
+
+**Inspect logs / on failure:** Actions tab → workflow → run → job log shows one
+line per run (`status=… http_status=… latency_s=…`). A red run means a genuine
+health/query failure (or missing Supabase config) — investigate the backend or
+secrets; a single slow run usually just means a Render cold start.
+
+**Limitations (honest, please read):**
+- GitHub Actions schedules are approximate: runs can be delayed (notably at the
+  top of the hour), queued jobs may be dropped under load, they run only on the
+  default branch, and in a public repo they auto-disable after 60 days without
+  repository activity. Monitoring **does not guarantee uptime**.
+- Periodic pings reset Render's 15-minute idle timer and reduce cold starts,
+  but Render may still restart/sleep a free service, and keeping one service
+  always warm consumes nearly all of the 750 free instance-hours/month/workspace
+  allowance. A paid instance is the real fix for guaranteed availability.
+- Scheduled database reads reduce pause risk but **do not guarantee Supabase
+  will never pause** the project — pausing follows Supabase's own activity
+  assessment, and only paid plans are exempt.
+
+Tests: `project/test_monitoring.py` (10 mocked cases, no live credentials).
 
 ## 14. 🐳 Docker
 

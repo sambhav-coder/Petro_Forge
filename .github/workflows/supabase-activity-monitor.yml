@@ -1,0 +1,69 @@
+# PetroForge — Supabase activity monitor (read-only, once daily).
+#
+# WHAT: one genuine read-only query per day —
+#   GET {SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=*&limit=1
+# with the anon/publishable key — to generate real database activity on the
+# owner's Supabase project (Supabase pauses Free projects after ~7 days of low
+# database activity).
+#
+# CURRENT STATE (verified 2026-10-13): the PetroForge backend in this repo has
+# NO Supabase integration — storage is in-memory (`project/app.py` states
+# "Explicitly NOT implemented: persistent database"), and no Supabase URL, key,
+# table, or RLS policy exists anywhere in the codebase. There is therefore NO
+# default table to query and none is invented here. Until the owner supplies
+# the three secrets below, every run exits with CONFIGURATION_MISSING (never a
+# fabricated success). Do NOT weaken Row Level Security and do NOT introduce
+# privileged writes just to keep a project active.
+#
+# REQUIRED REPOSITORY SECRETS (Settings → Secrets and variables → Actions):
+# - SUPABASE_URL       e.g. https://xyzcompany.supabase.co (no trailing slash)
+# - SUPABASE_ANON_KEY  publishable/anon key (read-only). NEVER the service-role
+#                      key for this keep-alive query.
+# - SUPABASE_TABLE     an EXISTING table the anon key may SELECT (anon SELECT
+#                      allowed via RLS policy). Read the table name from the
+#                      owner's Supabase dashboard — do not guess it in code.
+#
+# HONEST LIMITATIONS (do not delete):
+# - Scheduled database reads REDUCE pause risk but DO NOT GUARANTEE Supabase
+#   will never pause the project: pausing is based on Supabase's own
+#   "sufficient user database activity" assessment, and only a paid plan is
+#   exempt. See README §13c.
+# - GitHub Actions schedules can be delayed/dropped under load and only run on
+#   the default branch; in a public repo they auto-disable after 60 days with
+#   no repository activity.
+#
+# COST: one single-row SELECT per day. No migrations, no writes, idempotent.
+
+name: Supabase activity monitor
+
+"on":
+  schedule:
+    # Once daily ~03:17 UTC (off-peak, away from top-of-hour load spikes).
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}  # manual test runs (needs the same secrets).
+
+permissions:
+  contents: read  # read-only: this workflow never writes to the repo.
+
+concurrency:
+  group: supabase-activity-monitor
+  cancel-in-progress: true
+
+jobs:
+  activity-check:
+    name: Read-only activity query
+    runs-on: ubuntu-latest
+    timeout-minutes: 5  # bounded: one query + one bounded retry fits easily.
+    steps:
+      - name: Check out repository (scripts only)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - name: Run read-only Supabase query (limit=1, no writes)
+        run: python3 .github/scripts/supabase_activity_check.py --timeout 30
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_TABLE: ${{ secrets.SUPABASE_TABLE }}

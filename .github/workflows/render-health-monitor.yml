@@ -1,0 +1,53 @@
+# PetroForge — Render health / keep-alive monitor.
+#
+# WHAT: one lightweight GET to https://petro-forge.onrender.com/healthz every
+# ~10 minutes (cron `*/10 * * * *`), validating HTTP 200 + JSON `{"status":"ok"}`.
+# WHY: external monitoring that also reduces avoidable Render free-tier cold
+# starts (inbound traffic resets the 15-minute idle spin-down timer), plus a
+# manual `workflow_dispatch` for on-demand testing.
+#
+# HONEST LIMITATIONS (do not delete — they are load-bearing documentation):
+# - GitHub Actions `schedule` runs can be DELAYED (high load, top of the hour)
+#   and queued jobs may be dropped; execution is approximate, never exact.
+# - A missed/delayed run lets the 15-minute Render idle timer expire, so this
+#   workflow REDUCES cold starts but DOES NOT GUARANTEE continuous uptime.
+# - Render may restart a free service at any time, and 750 free instance
+#   hours/month/workspace ≈ one always-on service: keeping this service warm
+#   consumes most of that allowance. A paid instance is the real fix for
+#   guaranteed availability. See README §13c.
+# - In a public repo, GitHub auto-disables scheduled workflows after 60 days
+#   with no repository activity; re-enable in Actions tab if runs stop.
+# - The workflow stays useful as a HEALTH MONITOR even when Render sleeps:
+#   latency spikes reveal cold starts, non-200/timeout fails the run.
+#
+# COST: one tiny GET per run (~144/day). No builds, no deploys, no test suite.
+
+name: Render health monitor
+
+"on":
+  schedule:
+    # ~every 10 minutes (offset :07 to dodge top-of-hour load spikes).
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read  # read-only: this workflow never writes to the repo.
+
+concurrency:
+  group: render-health-monitor
+  cancel-in-progress: true  # overlapping runs are pointless for a liveness probe.
+
+jobs:
+  health-check:
+    name: Check /healthz
+    runs-on: ubuntu-latest
+    timeout-minutes: 5  # bounded: one 90 s-tolerant probe must fit easily.
+    steps:
+      - name: Check out repository (scripts only)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - name: Probe Render /healthz (single attempt, 90 s cold-start tolerant)
+        run: python3 .github/scripts/render_health_check.py --url https://petro-forge.onrender.com/healthz --timeout 90
