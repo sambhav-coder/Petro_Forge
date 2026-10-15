@@ -1,10 +1,16 @@
-# PetroForge — Render health / keep-alive monitor.
+# PetroForge — Render health monitor.
 #
 # WHAT: one lightweight GET to https://petro-forge.onrender.com/healthz every
-# ~10 minutes (cron `*/10 * * * *`), validating HTTP 200 + JSON `{"status":"ok"}`.
+# ~10 minutes (cron `7,17,27,37,47,57 * * * *`), validating HTTP 200 + JSON
+# `{"status":"ok"}` with a 90 s cold-start-tolerant timeout and at most one
+# bounded retry (timeouts / 5xx only; 4xx and invalid payloads are final).
 # WHY: external monitoring that also reduces avoidable Render free-tier cold
 # starts (inbound traffic resets the 15-minute idle spin-down timer), plus a
 # manual `workflow_dispatch` for on-demand testing.
+#
+# OUTCOMES: HEALTHY (fast valid 200), SLOW_START (valid 200 but >=15 s —
+# typical cold start; still exit 0), TIMEOUT, HTTP_ERROR, INVALID_RESPONSE.
+# SLOW_START keeps cold starts visible instead of confusing them with outages.
 #
 # HONEST LIMITATIONS (do not delete — they are load-bearing documentation):
 # - GitHub Actions `schedule` runs can be DELAYED (high load, top of the hour)
@@ -19,6 +25,8 @@
 #   with no repository activity; re-enable in Actions tab if runs stop.
 # - The workflow stays useful as a HEALTH MONITOR even when Render sleeps:
 #   latency spikes reveal cold starts, non-200/timeout fails the run.
+# - A successful /healthz check means the endpoint responded; it does not prove
+#   every application feature or the database is healthy.
 #
 # COST: one tiny GET per run (~144/day). No builds, no deploys, no test suite.
 
@@ -31,7 +39,7 @@ name: Render health monitor
   workflow_dispatch: {}
 
 permissions:
-  contents: read  # read-only: this workflow never writes to the repo.
+  contents: read  # least-privilege: this workflow never writes to the repo.
 
 concurrency:
   group: render-health-monitor
@@ -41,7 +49,7 @@ jobs:
   health-check:
     name: Check /healthz
     runs-on: ubuntu-latest
-    timeout-minutes: 5  # bounded: one 90 s-tolerant probe must fit easily.
+    timeout-minutes: 5  # bounded: 90 s probe + one bounded retry fits easily.
     steps:
       - name: Check out repository (scripts only)
         uses: actions/checkout@v4
@@ -49,5 +57,5 @@ jobs:
           persist-credentials: false
           sparse-checkout: .github/scripts
 
-      - name: Probe Render /healthz (single attempt, 90 s cold-start tolerant)
+      - name: Probe Render /healthz (90 s cold-start tolerant, 1 bounded retry)
         run: python3 .github/scripts/render_health_check.py --url https://petro-forge.onrender.com/healthz --timeout 90

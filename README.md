@@ -351,41 +351,62 @@ even while Render itself is asleep. Scripts are dependency-free Python stdlib
 | Workflow | Schedule (UTC) | Target | Secrets |
 |---|---|---|---|
 | `render-health-monitor.yml` | ~every 10 min (`7,17,27,37,47,57 * * * *`) | `GET https://petro-forge.onrender.com/healthz` | none |
-| `supabase-activity-monitor.yml` | daily ~03:17 UTC (`17 3 * * *`) | `GET {SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=*&limit=1` | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_TABLE` |
+| `supabase-activity-monitor.yml` | daily ~03:17 UTC (`17 3 * * *`) | `HEAD {SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select={PK}&limit=0` (no payload) | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_TABLE` (+ var `SUPABASE_PK_COLUMN`) |
 
-**Render check:** single attempt, 90 s timeout (cold-start tolerant — a
-slow-but-200 response is HEALTHY with its latency logged, never confused with
-an outage), validates HTTP 200 + JSON `{"status": "ok"}`. Logs timestamp, HTTP
-code and latency; fails the run on UNAVAILABLE / TIMEOUT / INVALID_RESPONSE.
-No retries in a tight loop, no expensive calls, no data modified, no secrets
-involved. Outcomes: HEALTHY / UNAVAILABLE / TIMEOUT / INVALID_RESPONSE.
+**Render check:** 90 s timeout (cold-start tolerant) with at most one bounded
+retry for timeouts/5xx only (4xx and bad payloads are final), validates HTTP
+200 + JSON `{"status": "ok"}`. A fast valid 200 is HEALTHY; a valid 200 slower
+than 15 s is SLOW_START (likely cold start, still exit 0 so cold starts stay
+visible instead of looking like outages). Logs timestamp, HTTP code and
+latency; fails the run on TIMEOUT / HTTP_ERROR / INVALID_RESPONSE. No tight
+loops, no expensive calls, no data modified, no secrets involved. Outcomes:
+HEALTHY / SLOW_START / TIMEOUT / HTTP_ERROR / INVALID_RESPONSE.
 
-**Supabase check:** one genuine read-only single-row SELECT per day (idempotent;
-no inserts/updates/deletes, no migrations, no new tables). Success is reported
-ONLY if the query itself returns HTTP 200 with a valid row array — a reachable
-URL with a failing query is DATABASE_QUERY_FAILED, never success. Outcomes:
-HEALTHY / UNAVAILABLE / TIMEOUT / INVALID_RESPONSE / CONFIGURATION_MISSING /
-DATABASE_QUERY_FAILED.
+**Supabase check:** one minimal read-only HEAD query per day
+(`select={PK}&limit=0`, idempotent; no inserts/updates/deletes, no migrations,
+no new tables, no record payload, no select-star). Uses the anon/publishable
+key only, respecting existing RLS policies. Success (HEALTHY) is reported ONLY
+if the authenticated HEAD query itself returns HTTP 2xx with database-reach
+evidence (Content-Range header) — a reachable URL with a failing query is
+HTTP_ERROR, a 2xx without DB evidence is QUERY_UNVERIFIED, never success.
+Outcomes: HEALTHY / CONFIG_MISSING / HTTP_ERROR / TIMEOUT / QUERY_UNVERIFIED.
 
-> **Current state (verified 2026-10-13):** this backend has **no Supabase
-> integration** — storage is in-memory, and no Supabase URL/key/table or RLS
-> policy exists in the codebase. Until the owner creates a Supabase project +
-> readable table and sets the three repository secrets (Settings → Secrets and
-> variables → Actions), every Supabase run reports CONFIGURATION_MISSING with
-> the exact owner action. Use the **anon/publishable key only** (read-only via
-> an anon-SELECT RLS policy) — never the service-role key for keep-alive, never
-> weaken RLS, never add privileged writes to dodge pausing. Never commit real
-> secret values; never put database credentials in `NEXT_PUBLIC_*` variables.
+> **Current state (verified 2026-10-13, re-audited 2026-10-15):** this backend has
+> **no Supabase integration** — storage is in-memory, and no Supabase URL/key/table
+> or RLS policy exists in the codebase. No workflow named
+> "Supabase Keep-Alive (Read-Only)" exists in repo history or the GitHub API;
+> the live "Supabase activity monitor" runs fail with CONFIG_MISSING (exit 2)
+> while secrets are unset — no false-green success. Until the owner creates a
+> Supabase project + readable table and sets the three repository secrets
+> (Settings → Secrets and variables → Actions → New repository secret) plus the
+> optional `SUPABASE_PK_COLUMN` variable (Settings → Secrets and variables →
+> Actions → Variables tab; default `id`), every Supabase run reports
+> CONFIG_MISSING with the exact owner action. Use the **anon/publishable key
+> only** (read-only via an anon-SELECT RLS policy) — never the service-role key
+> for keep-alive, never weaken RLS, never add privileged writes to dodge
+> pausing. Never commit real secret values; never put database credentials in
+> `NEXT_PUBLIC_*` variables.
 
 **Manual test:** Actions tab → pick the workflow → *Run workflow*
 (`workflow_dispatch`). Render: confirm `/healthz` reached, validation + latency
-logged. Supabase (after secrets are set): confirm the read succeeds and that no
-records were created, modified or deleted.
+logged. Supabase (after secrets are set): confirm the HEAD query succeeds and
+that no records were created, modified or deleted.
 
-**Inspect logs / on failure:** Actions tab → workflow → run → job log shows one
-line per run (`status=… http_status=… latency_s=…`). A red run means a genuine
-health/query failure (or missing Supabase config) — investigate the backend or
-secrets; a single slow run usually just means a Render cold start.
+**Inspect logs / summaries / on failure:** Actions tab → workflow → run → job
+log shows one line per run (`status=… http_status=… latency_s=…`) plus a short
+job summary (same fields). A red run means a genuine health/query failure (or
+missing Supabase config) — investigate the backend or secrets; a SLOW_START
+(200 but ≥15 s) just means a Render cold start and stays green.
+
+**Verified vs best-effort (honest, please read):**
+- Verified: workflow YAML exists and is scheduled; scripts use only read-only
+  methods with bounded timeouts; mocked tests cover healthy/failure/timeout/
+  invalid-payload/missing-config/no-writes/no-secrets/never-healthy-on-failure;
+  live `/healthz` shape (`status: "ok"`) is asserted by `test_deploy_hardening`.
+- Best-effort / unproven: that a daily HEAD `limit=0` counts as "sufficient
+  activity" under Supabase's inactivity rules (Supabase does not document that
+  guarantee); that 10-minute pings keep Render continuously warm (scheduler and
+  sleep behaviour are approximate).
 
 **Limitations (honest, please read):**
 - GitHub Actions schedules are approximate: runs can be delayed (notably at the
@@ -398,9 +419,11 @@ secrets; a single slow run usually just means a Render cold start.
   allowance. A paid instance is the real fix for guaranteed availability.
 - Scheduled database reads reduce pause risk but **do not guarantee Supabase
   will never pause** the project — pausing follows Supabase's own activity
-  assessment, and only paid plans are exempt.
+  assessment, and only paid plans are exempt. A HEAD `limit=0` success means the
+  query was validated, not that pausing is prevented.
+- No production data is written by either monitoring workflow (HEAD/GET only).
 
-Tests: `project/test_monitoring.py` (10 mocked cases, no live credentials).
+Tests: `project/test_monitoring.py` (17 mocked cases, no live credentials).
 
 ## 14. 🐳 Docker
 

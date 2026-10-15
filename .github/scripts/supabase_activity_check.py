@@ -1,61 +1,74 @@
 """Supabase activity check for the PetroForge GitHub Actions monitor.
 
-Dependency-free (Python standard library only). Performs exactly one genuine,
-harmless, read-only query against the owner's Supabase project:
+Dependency-free (Python standard library only). Performs exactly one minimal,
+read-only query against the owner's Supabase project:
 
-    GET {SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=*&limit=1
+    HEAD {SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select={PK_COLUMN}&limit=0
 
 with the anonymous/publishable key as ``apikey`` + ``Bearer`` headers.
 
+Why HEAD + limit=0:
+* Requests NO record payload (no row bodies are transferred or printed).
+* Avoids select-star (only the configured primary-key column is selected).
+* A single bounded read; no INSERT/UPDATE/DELETE, no migrations, no writes.
+
 Rules enforced by this script:
 
-* Read-only: a single HTTP GET with ``limit=1``. No INSERT/UPDATE/DELETE, no
-  migrations, no table creation, no writes of any kind (also asserted by the
-  test-suite, which greps this file for mutating methods).
-* Secrets are never printed: on success only the row count is logged; on
-  failure only the HTTP status and a redacted reason are logged.
-* Success is reported ONLY when the database query itself returns HTTP 200
-  with a valid JSON payload. A reachable URL with a failing query is
-  DATABASE_QUERY_FAILED, never HEALTHY.
-* Missing configuration (URL / anon key / table name) is reported as
-  CONFIGURATION_MISSING with the exact owner action required — never as
-  success, never fabricated.
+* Read-only: a single HTTP HEAD with ``limit=0``. No mutating methods.
+* Secrets are never printed: logs contain timestamp, status, HTTP status,
+  elapsed time, table/column names and row-count zero only.
+* Success (HEALTHY) is reported ONLY when the database query itself returns
+  HTTP 2xx to the HEAD request. A reachable URL with a failing query is
+  HTTP_ERROR, never HEALTHY.
+* Missing configuration is CONFIG_MISSING (exit 2), never success.
+* QUERY_UNVERIFIED is returned when the HTTP layer succeeds but the response
+  does not carry evidence the query reached the database (no Content-Range
+  header on a 2xx). This avoids false-green HEALTHY claims.
+* A successful HTTP request is NOT proof Supabase will not pause the project:
+  pausing follows Supabase's own activity assessment; only paid plans are
+  exempt. See README monitoring section.
 
-Configuration (GitHub Actions secrets, see the workflow file):
+Configuration (GitHub Actions secrets/variables, see the workflow file):
 
-* ``SUPABASE_URL`` — e.g. ``https://xyzcompany.supabase.co`` (no trailing slash)
-* ``SUPABASE_ANON_KEY`` — publishable/anon key (read-only). Never the
-  service-role key for this keep-alive query.
-* ``SUPABASE_TABLE`` — an existing table the anon key is allowed to SELECT
-  (e.g. via a permissive SELECT RLS policy). The PetroForge backend in this
-  repository currently has NO Supabase integration (in-memory storage only),
-  so there is no default: the owner must supply a real table name. Until the
-  three secrets exist, every run reports CONFIGURATION_MISSING.
+* ``SUPABASE_URL`` — e.g. ``https://xyzcompany.supabase.co`` (secret)
+* ``SUPABASE_ANON_KEY`` — publishable/anon key, read-only (secret; NEVER the
+  service-role key for this check)
+* ``SUPABASE_TABLE`` — an existing table the anon key may SELECT (secret)
+* ``SUPABASE_PK_COLUMN`` — primary-key (or any readable) column to select
+  (repository variable, default ``id``). The PetroForge backend in this repo
+  has NO Supabase integration (in-memory storage only), so no default table
+  exists: the owner must supply a real table + readable column. Until the
+  secrets/variable exist, every run reports CONFIGURATION_MISSING.
 
-Exit codes: 0 = HEALTHY, 1 = query/timeout/response failure, 2 = missing config.
+Exit codes: 0 = HEALTHY, 1 = HTTP_ERROR/TIMEOUT/QUERY_UNVERIFIED, 2 = missing config.
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime
-import json
 import os
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Tuple
+from typing import Tuple
 
 HEALTHY = "HEALTHY"
-UNAVAILABLE = "UNAVAILABLE"
+CONFIG_MISSING = "CONFIG_MISSING"
+HTTP_ERROR = "HTTP_ERROR"
 TIMEOUT = "TIMEOUT"
-INVALID_RESPONSE = "INVALID_RESPONSE"
-CONFIGURATION_MISSING = "CONFIGURATION_MISSING"
-DATABASE_QUERY_FAILED = "DATABASE_QUERY_FAILED"
+QUERY_UNVERIFIED = "QUERY_UNVERIFIED"
+
+# Backwards-compatibility aliases (older vocabulary used by previous runs).
+CONFIGURATION_MISSING = CONFIG_MISSING
+DATABASE_QUERY_FAILED = HTTP_ERROR
+UNAVAILABLE = HTTP_ERROR
+INVALID_RESPONSE = QUERY_UNVERIFIED
 
 DEFAULT_TIMEOUT_S = 30.0
+DEFAULT_PK_COLUMN = "id"
 MAX_ATTEMPTS = 2  # one initial try + one bounded retry (never a tight loop)
 RETRY_BACKOFF_S = 5.0
 
@@ -72,14 +85,28 @@ def _redact(reason: str) -> str:
     return text
 
 
+def _write_summary(lines: list) -> None:
+    """Append a short job summary via GitHub Actions step-summary if available."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+    except OSError:
+        pass
+
+
 def build_query_request(base_url: str, table: str, anon_key: str,
+                        select_column: str = DEFAULT_PK_COLUMN,
                         timeout_s: float = DEFAULT_TIMEOUT_S) -> urllib.request.Request:
-    """Build the single read-only REST request (GET, limit=1)."""
+    """Build the single read-only REST request (HEAD, limit=0, no payload)."""
     encoded_table = urllib.parse.quote(table, safe="")
-    url = f"{base_url.rstrip('/')}/rest/v1/{encoded_table}?select=*&limit=1"
+    encoded_col = urllib.parse.quote(select_column, safe="")
+    url = f"{base_url.rstrip('/')}/rest/v1/{encoded_table}?select={encoded_col}&limit=0"
     return urllib.request.Request(
         url,
-        method="GET",
+        method="HEAD",
         headers={
             "apikey": anon_key,
             "Authorization": f"Bearer {anon_key}",
@@ -89,25 +116,34 @@ def build_query_request(base_url: str, table: str, anon_key: str,
 
 
 def check_supabase_activity(base_url: str, anon_key: str, table: str,
+                            select_column: str = DEFAULT_PK_COLUMN,
                             timeout_s: float = DEFAULT_TIMEOUT_S) -> Tuple[str, dict]:
-    """Run the read-only query. Returns ``(status, detail)``; never raises."""
+    """Run the read-only HEAD query. Returns ``(status, detail)``; never raises."""
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
     started = time.monotonic()
     last_error: str | None = None
-    last_code: int | None = None
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        request = build_query_request(base_url, table, anon_key, timeout_s)
+        request = build_query_request(base_url, table, anon_key, select_column, timeout_s)
         try:
             with urllib.request.urlopen(request, timeout=timeout_s) as response:
-                raw = response.read()
-                last_code = response.status
+                code = response.status
+                # HEAD responses carry no body by definition; evidence the
+                # query reached PostgREST is the Content-Range header.
+                getheader = getattr(response, "getheader", None)
+                content_range = getheader("Content-Range") if callable(getheader) else None
+                headers = getattr(response, "headers", None)
+                if content_range is None and headers is not None:
+                    try:
+                        content_range = headers.get("Content-Range")
+                    except Exception:
+                        content_range = None
         except urllib.error.HTTPError as exc:
             # The database answered but the query failed (401 bad key / RLS
-            # denial, 404 unknown table, ...). Never a tight loop: HTTP errors
-            # are final — no retry, since retrying a rejected query is pointless.
+            # denial, 404 unknown table/column, ...). HTTP errors are final —
+            # no retry, since retrying a rejected query is pointless.
             latency_s = round(time.monotonic() - started, 3)
-            return DATABASE_QUERY_FAILED, {
+            return HTTP_ERROR, {
                 "timestamp": timestamp,
                 "http_status": exc.code,
                 "latency_s": latency_s,
@@ -122,7 +158,7 @@ def check_supabase_activity(base_url: str, anon_key: str, table: str,
                 last_error = "request timed out"
             else:
                 latency_s = round(time.monotonic() - started, 3)
-                return UNAVAILABLE, {
+                return HTTP_ERROR, {
                     "timestamp": timestamp,
                     "http_status": None,
                     "latency_s": latency_s,
@@ -131,7 +167,7 @@ def check_supabase_activity(base_url: str, anon_key: str, table: str,
                 }
         except (OSError, ValueError) as exc:
             latency_s = round(time.monotonic() - started, 3)
-            return UNAVAILABLE, {
+            return HTTP_ERROR, {
                 "timestamp": timestamp,
                 "http_status": None,
                 "latency_s": latency_s,
@@ -140,31 +176,28 @@ def check_supabase_activity(base_url: str, anon_key: str, table: str,
             }
         else:
             latency_s = round(time.monotonic() - started, 3)
-            try:
-                body: Any = json.loads(raw.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                return INVALID_RESPONSE, {
+            if 200 <= code < 300:
+                if content_range is not None:
+                    return HEALTHY, {
+                        "timestamp": timestamp,
+                        "http_status": code,
+                        "latency_s": latency_s,
+                        "rows": 0,
+                        "reason": None,
+                    }
+                return QUERY_UNVERIFIED, {
                     "timestamp": timestamp,
-                    "http_status": last_code,
+                    "http_status": code,
                     "latency_s": latency_s,
-                    "rows": None,
-                    "reason": "response is not valid JSON",
+                    "rows": 0,
+                    "reason": "2xx without Content-Range: database reach unverified",
                 }
-            if not isinstance(body, list):
-                return INVALID_RESPONSE, {
-                    "timestamp": timestamp,
-                    "http_status": last_code,
-                    "latency_s": latency_s,
-                    "rows": None,
-                    "reason": "unexpected payload (expected a JSON array of rows)",
-                }
-            # Genuine database activity: the query itself succeeded.
-            return HEALTHY, {
+            return HTTP_ERROR, {
                 "timestamp": timestamp,
-                "http_status": last_code,
+                "http_status": code,
                 "latency_s": latency_s,
-                "rows": len(body),
-                "reason": None,
+                "rows": None,
+                "reason": f"unexpected HTTP status {code}",
             }
         if attempt < MAX_ATTEMPTS:
             time.sleep(RETRY_BACKOFF_S)
@@ -185,38 +218,60 @@ def load_config(env: dict | None = None) -> Tuple[dict | None, list]:
     missing = [var for var in REQUIRED_VARS if not (source.get(var) or "").strip()]
     if missing:
         return None, missing
+    select_col = (source.get("SUPABASE_PK_COLUMN") or DEFAULT_PK_COLUMN).strip() or DEFAULT_PK_COLUMN
     return {
         "url": (source.get("SUPABASE_URL") or "").strip(),
         "anon_key": (source.get("SUPABASE_ANON_KEY") or "").strip(),
         "table": (source.get("SUPABASE_TABLE") or "").strip(),
+        "select_column": select_col,
     }, []
 
 
 def main(argv: list | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run one read-only Supabase activity query.")
+    parser = argparse.ArgumentParser(description="Run one read-only Supabase HEAD activity query.")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S,
                         help="Per-request timeout in seconds (default: 30).")
+    parser.add_argument("--select-column", default=None,
+                        help="Readable column to select (default: $SUPABASE_PK_COLUMN or 'id').")
     args = parser.parse_args(argv)
 
     config, missing = load_config()
     if config is None:
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        print(f"[{timestamp}] status={CONFIGURATION_MISSING} "
+        print(f"[{timestamp}] status={CONFIG_MISSING} "
               f"missing={','.join(missing)}", flush=True)
         print("Owner action: set repository secrets SUPABASE_URL, SUPABASE_ANON_KEY "
               "and SUPABASE_TABLE (an existing table readable by the anon key). "
               "No values are printed here. See README monitoring section.", flush=True)
+        _write_summary([
+            "## Supabase activity monitor",
+            f"- status: `{CONFIG_MISSING}`",
+            f"- missing: `{','.join(missing)}`",
+            "- Set SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_TABLE secrets.",
+        ])
         return 2
 
+    select_column = (args.select_column or config["select_column"]).strip() or DEFAULT_PK_COLUMN
     status, detail = check_supabase_activity(
-        config["url"], config["anon_key"], config["table"], args.timeout)
-    # Log table name + row count only; the URL host is public config but the key
-    # and any row contents are NEVER printed.
+        config["url"], config["anon_key"], config["table"], select_column, args.timeout)
+    # Log table/column + zero-row intent only; the key and any payload are NEVER printed
+    # (HEAD responses carry no body by design).
     print(f"[{detail['timestamp']}] status={status} "
           f"http_status={detail['http_status']} latency_s={detail['latency_s']} "
-          f"table={config['table']} rows={detail['rows']}", flush=True)
+          f"table={config['table']} select={select_column} rows={detail['rows']}", flush=True)
     if detail.get("reason"):
         print(f"reason={detail['reason']}", flush=True)
+    if status != HEALTHY:
+        print("Note: a successful HTTP request does not guarantee Supabase will "
+              "not pause the project; pausing follows Supabase's own activity "
+              "assessment.", flush=True)
+    _write_summary([
+        "## Supabase activity monitor",
+        f"- status: `{status}`",
+        f"- http_status: `{detail['http_status']}`",
+        f"- latency_s: `{detail['latency_s']}`",
+        f"- table: `{config['table']}`",
+    ])
     return 0 if status == HEALTHY else 1
 
 

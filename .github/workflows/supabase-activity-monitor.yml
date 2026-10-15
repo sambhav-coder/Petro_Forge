@@ -1,38 +1,56 @@
 # PetroForge — Supabase activity monitor (read-only, once daily).
 #
-# WHAT: one genuine read-only query per day —
-#   GET {SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=*&limit=1
+# WHAT: one minimal read-only query per day —
+#   HEAD {SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select={PK_COLUMN}&limit=0
 # with the anon/publishable key — to generate real database activity on the
 # owner's Supabase project (Supabase pauses Free projects after ~7 days of low
-# database activity).
+# database activity). HEAD + limit=0 transfers NO record payload and avoids
+# select-star (only the configured PK column is selected).
 #
-# CURRENT STATE (verified 2026-10-13): the PetroForge backend in this repo has
-# NO Supabase integration — storage is in-memory (`project/app.py` states
-# "Explicitly NOT implemented: persistent database"), and no Supabase URL, key,
-# table, or RLS policy exists anywhere in the codebase. There is therefore NO
-# default table to query and none is invented here. Until the owner supplies
-# the three secrets below, every run exits with CONFIGURATION_MISSING (never a
-# fabricated success). Do NOT weaken Row Level Security and do NOT introduce
-# privileged writes just to keep a project active.
+# ROOT-CAUSE NOTE (2026-10-15 audit): no workflow named
+# "Supabase Keep-Alive (Read-Only)" exists in this repo's history or in the
+# GitHub API (only "Supabase activity monitor" + "Render health monitor").
+# The live "Supabase activity monitor" runs FAIL with CONFIG_MISSING (exit 2)
+# because the three secrets are unset — i.e. no false-green success. The
+# backend in this repo has NO Supabase integration (in-memory storage only),
+# so no table/PK can be inferred from code and none is invented here. A past
+# "successful run yet paused" symptom is explained by: (a) HTTP 200 to the
+# wrong URL / without auth / with a rejected query was counted as success, or
+# (b) even a genuine REST read is not proven to satisfy Supabase's own
+# "sufficient activity" assessment. This repaired workflow therefore requires a
+# real 2xx to the authenticated HEAD query (else HTTP_ERROR, never HEALTHY)
+# and reports QUERY_UNVERIFIED when a 2xx lacks DB-reach evidence.
+#
+# CURRENT STATE: backend has NO Supabase integration — storage is in-memory
+# (`project/app.py`). There is therefore NO default table to query and none is
+# invented here. Until the owner supplies the secrets/variable below, every run
+# exits with CONFIG_MISSING (never a fabricated success). Do NOT weaken Row
+# Level Security and do NOT introduce privileged writes just to keep a project
+# active. Never use the service-role key for this check.
 #
 # REQUIRED REPOSITORY SECRETS (Settings → Secrets and variables → Actions):
 # - SUPABASE_URL       e.g. https://xyzcompany.supabase.co (no trailing slash)
 # - SUPABASE_ANON_KEY  publishable/anon key (read-only). NEVER the service-role
-#                      key for this keep-alive query.
+#                      key for this query.
 # - SUPABASE_TABLE     an EXISTING table the anon key may SELECT (anon SELECT
 #                      allowed via RLS policy). Read the table name from the
 #                      owner's Supabase dashboard — do not guess it in code.
+# OPTIONAL REPOSITORY VARIABLE (Settings → Secrets and variables → Actions → Variables):
+# - SUPABASE_PK_COLUMN readable column to select (default "id"). Set to the
+#                      table's real PK (or any anon-readable column) if "id"
+#                      does not exist; a wrong column yields HTTP_ERROR, never
+#                      false success.
 #
 # HONEST LIMITATIONS (do not delete):
 # - Scheduled database reads REDUCE pause risk but DO NOT GUARANTEE Supabase
-#   will never pause the project: pausing is based on Supabase's own
-#   "sufficient user database activity" assessment, and only a paid plan is
-#   exempt. See README §13c.
+#   will never pause the project: pausing is based on Supabase's own activity
+#   assessment, and only a paid plan is exempt. A HEAD limit=0 success means
+#   the query was validated, not that pausing is prevented. See README §13c.
 # - GitHub Actions schedules can be delayed/dropped under load and only run on
 #   the default branch; in a public repo they auto-disable after 60 days with
 #   no repository activity.
 #
-# COST: one single-row SELECT per day. No migrations, no writes, idempotent.
+# COST: one HEAD query per day. No migrations, no writes, idempotent.
 
 name: Supabase activity monitor
 
@@ -43,7 +61,7 @@ name: Supabase activity monitor
   workflow_dispatch: {}  # manual test runs (needs the same secrets).
 
 permissions:
-  contents: read  # read-only: this workflow never writes to the repo.
+  contents: read  # least-privilege: this workflow never writes to the repo.
 
 concurrency:
   group: supabase-activity-monitor
@@ -53,7 +71,7 @@ jobs:
   activity-check:
     name: Read-only activity query
     runs-on: ubuntu-latest
-    timeout-minutes: 5  # bounded: one query + one bounded retry fits easily.
+    timeout-minutes: 5  # bounded: one HEAD query + one bounded retry fits easily.
     steps:
       - name: Check out repository (scripts only)
         uses: actions/checkout@v4
@@ -61,9 +79,10 @@ jobs:
           persist-credentials: false
           sparse-checkout: .github/scripts
 
-      - name: Run read-only Supabase query (limit=1, no writes)
+      - name: Run read-only Supabase HEAD query (limit=0, no payload, no writes)
         run: python3 .github/scripts/supabase_activity_check.py --timeout 30
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_TABLE: ${{ secrets.SUPABASE_TABLE }}
+          SUPABASE_PK_COLUMN: ${{ vars.SUPABASE_PK_COLUMN }}
