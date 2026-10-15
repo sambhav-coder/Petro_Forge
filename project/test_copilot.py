@@ -176,3 +176,45 @@ def test_speech_helpers_no_ids_or_json():
     spoken = cp.to_speech_text("Well cpl-abcdef1234 at 2026-10-15T09:00:00Z runs 5 SPM, SOR 0.1, 22.5 bopd {\"a\":1}")
     assert "cpl-" not in spoken and "2026" not in spoken and "{" not in spoken
     assert "S P M" in spoken and "S O R" in spoken
+
+
+def test_plan_chapter_camera_and_panel_mapping():
+    """Exact chapter → camera + panel contract (single authoritative timeline)."""
+    c, wid = _seed()
+    body = c.post("/api/v1/copilot/plan", json={"well_id": wid}).json()
+    by_stage = {s["stage"]: s for s in body["segments"]}
+    expected = {
+        "welcome": ("FIELD", "OVERVIEW"), "model": ("FIELD", "OVERVIEW"),
+        "telemetry": ("WELL", "TELEMETRY"), "hybrid": ("WELL", "HYBRID"),
+        "srp": ("PUMP", "SRP"), "css": ("RESERVOIR", "CYCLE"),
+        "alerts": ("FIELD", "OVERVIEW"), "simulation": ("PUMP", "WHAT-IF"),
+        "optimization": ("FIELD", "OPTIMIZATION"), "summary": ("FIELD", "OVERVIEW"),
+    }
+    assert set(by_stage) == set(expected)
+    for stage, (cam, tab) in expected.items():
+        assert by_stage[stage]["camera_action"] == cam, stage
+        assert by_stage[stage]["panel_tab"] == tab, stage
+        assert by_stage[stage]["panel_section"] == f"copilot-{stage}", stage
+
+
+def test_plan_srp_gated_on_dynacard():
+    """SRP chapter is available only with dynacard evidence (no blind narration)."""
+    c, wid = _seed()
+    body = c.post("/api/v1/copilot/plan", json={"well_id": wid}).json()
+    srp = next(s for s in body["segments"] if s["stage"] == "srp")
+    assert srp["available"] is True
+    assert "Dynacard" in srp["narration_text"] or "dynacard" in srp["narration_text"].lower()
+
+
+def test_plan_values_match_evidence_no_fabrication():
+    """Every related value in the plan must come from the context evidence."""
+    c, wid = _seed()
+    ctx = c.post("/api/v1/copilot/session", json={"well_id": wid}).json()
+    plan = c.post("/api/v1/copilot/plan", json={"well_id": wid}).json()
+    tele_oil = c.get(f"/api/v1/wells/{wid}").json()["oil_rate_bopd"]
+    tele_seg = next(s for s in plan["segments"] if s["stage"] == "telemetry")
+    oil_vals = [v for v in tele_seg["related_values"] if v["name"] == "oil_rate_bopd"]
+    assert oil_vals and oil_vals[0]["value"] == tele_oil
+    assert all(v["provenance"] in ("OBSERVED", "HISTORICAL", "DERIVED",
+               "PHYSICS_PREDICTION", "CALIBRATED_TWIN", "SIMULATION",
+               "SYNTHETIC_DEMO", "UNAVAILABLE") for s in plan["segments"] for v in s["related_values"])

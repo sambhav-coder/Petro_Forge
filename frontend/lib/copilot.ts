@@ -114,6 +114,8 @@ export interface PlanSegment {
   data_provenance: string;
   component_focus: string;
   camera_action: string;
+  panel_tab: string;
+  panel_section: string;
   related_values: Array<{ name: string; value: number | string | null; provenance?: string }>;
   animation_action: string;
   simulation_id: string | null;

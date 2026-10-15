@@ -768,7 +768,7 @@ export default function Home() {
           }}
         >
           {(inspectorOpen || copilotOpen) && (
-            <div className="w-full h-full overflow-y-auto p-2 space-y-2">
+            <div id="copilot-right-panel" className="w-full h-full overflow-y-auto p-2 space-y-2">
               {copilotOpen && (
                 <CopilotPanel
                   wellId={selectedWellId}
@@ -776,6 +776,11 @@ export default function Home() {
                   onHighlight={handleCopilotHighlight}
                   onSpeakState={setEngineerMode}
                   onStage={setCopilotStage}
+                  onRequestPanel={(tab) => {
+                    forcedTabRef.current = tab;
+                    setForcedTab(tab);
+                    setInspectorOpen(true);
+                  }}
                 />
               )}
               {inspectorOpen && (

@@ -339,6 +339,14 @@ _FOCUS_CAMERA = {
     "thermal": "RESERVOIR", "overview": "FIELD", "panel": "FIELD",
 }
 
+# stage -> Inspector tab that must be visible for the chapter (single source:
+# narration, camera AND panel come from the same segment spec).
+_PANEL_BY_STAGE = {
+    "welcome": "OVERVIEW", "model": "OVERVIEW", "telemetry": "TELEMETRY",
+    "hybrid": "HYBRID", "srp": "SRP", "css": "CYCLE", "alerts": "OVERVIEW",
+    "simulation": "WHAT-IF", "optimization": "OPTIMIZATION", "summary": "OVERVIEW",
+}
+
 
 def build_presentation_plan(ctx: Dict[str, Any]) -> Dict[str, Any]:
     """Build the ordered 10-chapter presentation from validated evidence.
@@ -377,6 +385,8 @@ def build_presentation_plan(ctx: Dict[str, Any]) -> Dict[str, Any]:
             "data_provenance": prov,
             "component_focus": focus,
             "camera_action": _FOCUS_CAMERA.get(focus, "FIELD"),
+            "panel_tab": _PANEL_BY_STAGE.get(stage, "OVERVIEW"),
+            "panel_section": f"copilot-{stage}",
             "related_values": values or [],
             "animation_action": "srp_cycle" if focus in ("srp", "rod", "pump") and stage == "srp" else "highlight",
             "simulation_id": simulation_id,
@@ -403,13 +413,19 @@ def build_presentation_plan(ctx: Dict[str, Any]) -> Dict[str, Any]:
         "camera wahin focus karega.", "overview")
     # Ch3 telemetry
     if has_tele:
+        calib_hint = ""
+        if analytics and isinstance(analytics.get("calibration"), dict):
+            cal = analytics["calibration"]
+            calib_hint = (f" History calibration {cal.get('status')} over "
+                          f"{cal.get('points')} points. " if cal.get("status") else "")
         seg(3, "telemetry", "Live telemetry and operating context",
             f"Current readings: phase {tele.get('css_phase')}, production "
             f"{_fnum(tele.get('oil_rate_bopd'))} bopd, SPM {_fnum(tele.get('spm'))}, "
             f"stroke {_fnum(tele.get('stroke_in'), 0)} inch, steam "
             f"{_fnum(tele.get('steam_volume_t'), 0)} tonnes, soak "
             f"{_fnum(tele.get('soak_time_h'), 0)} hours. Timestamp panel me hai. "
-            f"History me {hist_n} readings available hain.", "wellhead",
+            f"History me {hist_n} readings available hain. {calib_hint}".strip(),
+            "wellhead",
             [{"name": k, "value": tele.get(k), "provenance": OBSERVED}
              for k in ("oil_rate_bopd", "spm", "stroke_in", "steam_volume_t")])
     else:
@@ -454,12 +470,17 @@ def build_presentation_plan(ctx: Dict[str, Any]) -> Dict[str, Any]:
             available=False, reason="dynacard requires telemetry")
     # Ch6 CSS
     if cycle and has_tele:
+        multi_hint = ""
+        if multi and isinstance(multi.get("recommendation"), dict):
+            rec = multi["recommendation"]
+            multi_hint = (f" Multi-cycle outlook: next cycle "
+                          f"{_fnum(rec.get('steam_volume_t'), 0)} tonnes steam, "
+                          f"{_fnum(rec.get('soak_time_h'), 0)} hours soak. ")
         seg(6, "css", "CSS cycle",
             f"CSS cycle: injection {_fnum(cycle.get('injection_days'), 0)} days, soak "
             f"{_fnum(cycle.get('soak_days'), 0)} days, optimal cut-off day "
             f"{cycle.get('optimal_cutoff_production_day')}, cycle SOR "
-            f"{_fnum(cycle.get('cycle_sor_t_per_bbl'), 4)}. "
-            f"{'Multi-cycle outlook bhi available hai. ' if multi else ''}"
+            f"{_fnum(cycle.get('cycle_sor_t_per_bbl'), 4)}.{multi_hint}"
             f"Prototype thermal assumptions [PROTO] apply hote hain.", "reservoir",
             [{"name": "cycle_sor", "value": cycle.get("cycle_sor_t_per_bbl"), "provenance": PHYSICS_PREDICTION}])
     else:

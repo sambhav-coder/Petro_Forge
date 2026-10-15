@@ -25,12 +25,14 @@ export default function CopilotPanel({
   onHighlight,
   onSpeakState,
   onStage,
+  onRequestPanel,
 }: {
   wellId: string | null;
   autoStartKey: number;
   onHighlight: (kind: string) => void;
   onSpeakState: (mode: "idle" | "listening" | "explaining" | "speaking") => void;
   onStage: (s: CopilotState) => void;
+  onRequestPanel: (tab: string) => void;
 }) {
   const [state, setState] = useState<CopilotState>("IDLE");
   const [note, setNote] = useState<string | null>(null);
@@ -76,8 +78,13 @@ export default function CopilotPanel({
   }, []);
 
   const focusFor = useCallback((seg: PlanSegment) => {
+    // One authoritative segment drives camera + panel + narration together.
     onHighlight(seg.component_focus);
-  }, [onHighlight]);
+    onRequestPanel(seg.panel_tab);
+    try {
+      document.getElementById("copilot-right-panel")?.scrollTo({ top: 0, behavior: "smooth" });
+    } catch { /* scroll is best-effort */ }
+  }, [onHighlight, onRequestPanel]);
 
   /* Speak one segment; resolve ONLY on audio completion (or timed dwell in text mode). */
   const speakAndWait = useCallback((seg: PlanSegment): Promise<void> => {

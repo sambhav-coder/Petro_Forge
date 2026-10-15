@@ -96,10 +96,10 @@ export default function FieldScene({
       {PRESSURE_OVERLAY_ENABLED && focusWellId && (
         <PressureOverlay wellId={focusWellId} twin={twins[focusWellId] ?? null} visible />
       )}
-      {/* AI Co-Pilot engineer: positioned beside the focused well, never
-          modifies well geometry/physics inputs; schematic figure only. */}
+      {/* AI Co-Pilot engineer: stable mount (fixed key), fixed offset from the
+          focused well. Camera moves; the engineer never teleports per chapter. */}
       {showEngineer && (
-        <AIEngineer mode={engineerMode} position={[focusX + 5.5, 0, 5.5]} />
+        <AIEngineer key="copilot-engineer" mode={engineerMode} position={[focusX + 5.5, 0, 5.5]} />
       )}
     </Canvas>
   );

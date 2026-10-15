@@ -438,14 +438,16 @@ SIMULATION-labelled output. Follow-up Q&A via text or mic (browser STT).
   allowlist/budgets + 2.0 speech helpers and 10-chapter presentation planner) +
   `POST /api/v1/copilot/{session,analyze,simulate,ask,plan}`; frontend
   `lib/copilot.ts` (state machine + completion-chained `runPresentation`),
-  `lib/voice.ts` (hi-IN voice pick, abbreviation expansion, chunked queue),
+  `lib/voice.ts` (Edge-TTS audio queue + browser fallback) with
+  `lib/voice/{voices,edgeTts,translit}.ts` and `app/api/voice/tts`,
   `components/CopilotPanel.tsx` (chapter timeline, subtitles, sim compare, Q&A),
   `components/AIEngineer.tsx` (procedural PPE engineer inside the existing R3F
   canvas; no extra WebGL context, no geometry/physics edits).
 - One Live press runs all 10 chapters (welcome → model → telemetry → hybrid →
   SRP → CSS → alerts → simulation → optimization → summary), each with
   camera focus sync (CameraRig smooth-transition; user drag cancels auto-move),
-  narration chained on audio end, and a completion report (presented/skipped).
+  matching Inspector tab auto-opened + scrolled into view, narration chained on
+  audio end, and a completion report (presented/skipped).
   Unavailable chapters are skipped with reasons, never fictional data.
 - Session states: IDLE→INITIALIZING→COLLECTING_EVIDENCE→ANALYZING→SIMULATING→
   NARRATING→COMPLETED, plus PAUSED/INSUFFICIENT_DATA/PARTIAL_RESULTS/ERROR/
@@ -461,22 +463,21 @@ SIMULATION-labelled output. Follow-up Q&A via text or mic (browser STT).
   keeps the built-in figure + text fallback. Reduced-motion respected.
 - Safety: read-only + bounded simulate only; no SCADA/PLC/control endpoints, no
   telemetry/history writes, all sims Pydantic-bounded and labelled SIMULATION.
-- Voice: `hi-IN` speechSynthesis TTS + mic STT after explicit click; text-only
-  mode fully works; no audio recorded/uploaded/retained. 2.0 speaks via a
-  completion-chained chunk queue (sentence-aware ≤200-char chunks, SPM/SOR/CSS
-  letter-spaced, IDs/timestamps/JSON stripped) with preferred hi-IN voice
-  selection. Cyber Sakhi voice reference was NOT accessible in this workspace
-  (no local checkout found; nothing copied) — no voice parity claimed; the
-  pipeline accepts any server neural provider later without caller changes.
+- Voice: exact Cyber Sakhi pipeline — server Edge TTS (`node-edge-tts`, no key)
+  with `en-IN-NeerjaNeural` / `hi-IN-SwaraNeural`, `POST /api/voice/tts`
+  (base64 MP3 + word timings), per-chunk audio queue chained on `ended`, and a
+  pre-resolved female browser-voice fallback (Hinglish→Devanagari translit).
+  STT stays on-device; no audio recorded/uploaded/retained. Mic needs explicit
+  click. Real synthesis verified (`scripts/voice-acceptance.mjs`, 3/3 samples);
+  perceived pronunciation quality still needs a human listen.
 - 3D reliability: `SceneErrorBoundary` keeps panels usable on WebGL failure;
   overview reset action; reduced-motion respected.
-- Tests: `project/test_copilot.py` (11 live-API tests incl. 10-chapter plan,
-  public-well honest skips, speech-text hygiene, seeded demo, no creds);
-- Tests: `project/test_copilot.py` (7 live-API tests, seeded demo, no creds);
+- Tests: `project/test_copilot.py` (14 live-API tests incl. 10-chapter plan,
+  exact camera/panel mapping, SRP gating, no-fabrication, seeded demo, no
+  creds); `npm test` (vitest: 9 presentation/voice unit tests);
   full suite `pytest -q` in `project/`; frontend `npm run lint`, `npx tsc --noEmit`,
   `npm run build` with production API base.
-- Limitations: no frontend unit runner in repo (verified via lint/type/build +
-  backend integration); no browser-automation check here (HTTP/API verified);
+- Limitations: no browser-automation check here (HTTP/API verified);
   avatar is schematic not photorealistic; HEAD/periodic activity and Render
   warmth remain best-effort (see §13c).
 
