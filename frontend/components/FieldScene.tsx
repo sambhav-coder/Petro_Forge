@@ -2,6 +2,7 @@
 
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows } from "@react-three/drei";
+import { Component, type ReactNode } from "react";
 import { COLORS, LAYOUT } from "@/lib/scene";
 import type { CameraPreset, IsolatableKind, SceneSelection, TwinSnapshot, ViewMode, WellSummary } from "@/lib/types";
 import Terrain from "./Terrain";
@@ -102,4 +103,40 @@ export default function FieldScene({
       )}
     </Canvas>
   );
+}
+
+/** Error boundary: a WebGL/model failure shows a useful fallback instead of
+ *  unmounting the whole Control Room. Analysis panels keep working. */
+export class SceneErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean; message: string }
+> {
+  state = { failed: false, message: "" };
+
+  static getDerivedStateFromError(e: unknown) {
+    return { failed: true, message: e instanceof Error ? e.message : String(e) };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="absolute inset-0 flex items-center justify-center p-4" role="alert">
+          <div className="glass rounded-2xl p-6 text-center space-y-2 max-w-md">
+            <div className="font-display font-semibold text-cream-soft">3D scene unavailable</div>
+            <p className="text-[11px] text-sand/60">
+              WebGL or model loading failed ({this.state.message.slice(0, 120)}). Well data,
+              findings and simulations below remain fully usable.
+            </p>
+            <button
+              onClick={() => this.setState({ failed: false, message: "" })}
+              className="pill-btn text-[10px] font-mono px-3 py-1.5 rounded-lg border border-natural/25 text-sand/80"
+            >
+              ⟳ Retry 3D scene
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

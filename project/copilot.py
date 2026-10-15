@@ -259,3 +259,267 @@ def answer_fallback(question: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 def started_at() -> float:
     return time.monotonic()
+
+
+# ---------------- 2.0: speech-aware text + presentation planner ----------------
+
+# Abbreviations are letter-spaced for understandable TTS; units stay English.
+_SPEECH_SUBS = [
+    ("bopd", "B O P D"),
+    ("SPM", "S P M"),
+    ("SOR", "S O R"),
+    ("CSS", "C S S"),
+    ("SRP", "S R P"),
+    ("VFD", "V F D"),
+    ("BGW", "B G W"),
+    ("kWh", "kilowatt hour"),
+    ("CWE", "C W E"),
+]
+
+
+def to_speech_text(text: str) -> str:
+    """Prepare narration for speech: normalize, expand abbreviations, strip IDs/JSON.
+
+    Never speaks raw JSON, internal IDs, or ISO timestamps as narration.
+    """
+    import re
+    t = re.sub(r"\s+", " ", text or "").strip()
+    # Drop JSON fragments, ISO timestamps and long hex IDs (UI shows them, speech skips them).
+    t = re.sub(r"\{[^{}]*\}", "", t)
+    t = re.sub(r"\d{4}-\d{2}-\d{2}T\d[\d:.\-+]*Z?", "", t)
+    t = re.sub(r"\b(cpl-|sim-|evt-|alert-)[0-9a-fA-F\-]{4,}\b", "", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    for raw, spoken in _SPEECH_SUBS:
+        t = re.sub(rf"\b{re.escape(raw)}\b", spoken, t)
+    return t[:MAX_NARRATION_CHARS]
+
+
+def chunk_text(text: str, max_len: int = 220) -> List[str]:
+    """Split narration into short speakable segments at sentence boundaries."""
+    import re
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", (text or "").strip()) if s.strip()]
+    chunks: List[str] = []
+    buf = ""
+    for s in sentences:
+        if len(s) > max_len:
+            # Hard-split very long sentences on commas/semicolons.
+            parts = [p.strip() for p in re.split(r"[,;]\s+", s) if p.strip()]
+            for p in parts:
+                if len(buf) + len(p) + 2 <= max_len:
+                    buf = (buf + " " + p).strip()
+                else:
+                    if buf:
+                        chunks.append(buf)
+                    buf = p
+            continue
+        if len(buf) + len(s) + 1 <= max_len:
+            buf = (buf + " " + s).strip()
+        else:
+            if buf:
+                chunks.append(buf)
+            buf = s
+    if buf:
+        chunks.append(buf)
+    return chunks or [text[:max_len]]
+
+
+def _fnum(value: Any, digits: int = 1) -> str:
+    try:
+        if value is None:
+            return "unavailable"
+        return f"{float(value):.{digits}f}"
+    except (TypeError, ValueError):
+        return "unavailable"
+
+
+# component_focus -> frontend camera preset + isolate target.
+_FOCUS_CAMERA = {
+    "well": "WELL", "wellhead": "WELL", "srp": "PUMP", "rod": "PUMP",
+    "pump": "PUMP", "wellbore": "WELLBORE", "reservoir": "RESERVOIR",
+    "thermal": "RESERVOIR", "overview": "FIELD", "panel": "FIELD",
+}
+
+
+def build_presentation_plan(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Build the ordered 10-chapter presentation from validated evidence.
+
+    Chapters unavailable for this well are marked available=False with an
+    honest unavailable_reason (never fictional measurements). Pure function of
+    ctx: deterministic and testable.
+    """
+    well_id = ctx.get("well_id", "?")
+    tele = ctx.get("telemetry") or {}
+    twin = ctx.get("twin") or {}
+    hybrid = ctx.get("hybrid") if isinstance(ctx.get("hybrid"), dict) else None
+    dyn = ctx.get("dynacard") if isinstance(ctx.get("dynacard"), dict) else None
+    cycle = ctx.get("cycle") if isinstance(ctx.get("cycle"), dict) else None
+    multi = ctx.get("multi") if isinstance(ctx.get("multi"), dict) else None
+    opt = ctx.get("optimization") if isinstance(ctx.get("optimization"), dict) else None
+    alerts = ctx.get("alerts") or []
+    analytics = ctx.get("analytics") if isinstance(ctx.get("analytics"), dict) else None
+    hist_n = ctx.get("history_count", 0)
+    has_tele = bool(tele)
+    prov = presentation_provenance(ctx.get("provenance"))
+
+    segs: List[Dict[str, Any]] = []
+
+    def seg(seq: int, stage: str, title: str, text: str, focus: str,
+            values: Optional[List[Dict[str, Any]]] = None,
+            available: bool = True, reason: str = "",
+            simulation_id: Optional[str] = None) -> None:
+        spoken = to_speech_text(text)
+        segs.append({
+            "segment_id": f"SEG-{seq:02d}", "well_id": well_id, "sequence": seq,
+            "stage": stage, "title": title,
+            "narration_text": text[:1200], "spoken_text": spoken,
+            "speech_chunks": chunk_text(spoken),
+            "evidence_refs": [f"SEG-{seq:02d}-evidence"],
+            "data_provenance": prov,
+            "component_focus": focus,
+            "camera_action": _FOCUS_CAMERA.get(focus, "FIELD"),
+            "related_values": values or [],
+            "animation_action": "srp_cycle" if focus in ("srp", "rod", "pump") and stage == "srp" else "highlight",
+            "simulation_id": simulation_id,
+            "duration_hint_s": max(6, min(40, 6 + len(spoken) // 14)),
+            "completion_condition": "audio_end",
+            "available": available, "unavailable_reason": reason,
+        })
+
+    # Ch1 welcome
+    basis = ("measured telemetry" if has_tele else
+             "public record only (no live telemetry)" if ctx.get("public") else
+             "limited evidence")
+    seg(1, "welcome", "Welcome and well identification",
+        f"Namaste, engineer. Main PetroForge AI Co-Pilot hoon. Aaj hum well {well_id} "
+        f"ka complete analysis karenge. Ye session {basis} par based hai. "
+        f"Main Hybrid Twin, SRP pumping, CSS cycle, alerts, simulation aur optimization "
+        f"ek-ek karke explain karunga. Saare simulated numbers SIMULATION-labelled rahenge.",
+        "overview")
+    # Ch2 model overview
+    seg(2, "model", "3D well model overview",
+        "Saamne aapka 3D digital twin hai — ye schematic visualization hai, field-calibrated "
+        "geometry nahi. Upar surface pumping unit, beech me wellbore with rod string, neeche "
+        "pump, aur sabse neeche reservoir thermal zone. Main jiss component ki baat karunga, "
+        "camera wahin focus karega.", "overview")
+    # Ch3 telemetry
+    if has_tele:
+        seg(3, "telemetry", "Live telemetry and operating context",
+            f"Current readings: phase {tele.get('css_phase')}, production "
+            f"{_fnum(tele.get('oil_rate_bopd'))} bopd, SPM {_fnum(tele.get('spm'))}, "
+            f"stroke {_fnum(tele.get('stroke_in'), 0)} inch, steam "
+            f"{_fnum(tele.get('steam_volume_t'), 0)} tonnes, soak "
+            f"{_fnum(tele.get('soak_time_h'), 0)} hours. Timestamp panel me hai. "
+            f"History me {hist_n} readings available hain.", "wellhead",
+            [{"name": k, "value": tele.get(k), "provenance": OBSERVED}
+             for k in ("oil_rate_bopd", "spm", "stroke_in", "steam_volume_t")])
+    else:
+        seg(3, "telemetry", "Live telemetry and operating context",
+            "Is well ke liye current telemetry unavailable hai. Isliye aage ke chapters "
+            "historical, synthetic ya model estimates par based honge — sab clearly labelled.",
+            "wellhead", available=False,
+            reason="no telemetry for this well")
+    # Ch4 hybrid
+    if hybrid and has_tele:
+        cal = (hybrid.get("calibration") or {})
+        div = (hybrid.get("divergence") or {})
+        pred = ((hybrid.get("physics") or {}).get("prediction") or {})
+        seg(4, "hybrid", "Hybrid Digital Twin",
+            f"Hybrid Twin: physics prediction {_fnum(pred.get('oil_production_bopd'))} bopd, "
+            f"calibration {cal.get('status', 'unknown')}, divergence "
+            f"{_fnum(div.get('value_bopd'))} bopd ({div.get('severity') or 'n/a'}). "
+            f"Uncertainty {((hybrid.get('uncertainty') or {}).get('status')) or 'UNAVAILABLE'} — "
+            f"koi confidence percentage invent nahi kiya gaya.", "well",
+            [{"name": "hybrid_oil_bopd", "value": pred.get("oil_production_bopd"),
+              "provenance": PHYSICS_PREDICTION}])
+    else:
+        seg(4, "hybrid", "Hybrid Digital Twin",
+            "Hybrid Twin ke liye telemetry chahiye. Public-only ya telemetry-less well par "
+            "ye chapter skip hota hai — calibrated prediction invent nahi karenge.",
+            "well", available=False, reason="hybrid requires telemetry")
+    # Ch5 SRP
+    if dyn and has_tele:
+        perf = dyn.get("pump_performance") or {}
+        eff = (perf.get("efficiency") or {})
+        seg(5, "srp", "SRP operation and pumping cycle",
+            f"Ab SRP dekhte hain. Surface pumping unit upstroke me rod assembly ko upar kheenchta "
+            f"hai, downstroke me neeche laata hai. Dynacard diagnosis: {dyn.get('primary_diagnosis')}. "
+            f"Pump fillage {_fnum(dyn.get('estimated_pump_fillage'))}, efficiency "
+            f"{_fnum(eff.get('value'))} ({eff.get('status') or 'n/a'}). Ye simplified animation hai — "
+            f"physically calibrated rod-string simulation nahi.", "pump",
+            [{"name": "fillage", "value": dyn.get("estimated_pump_fillage"), "provenance": DERIVED}])
+    else:
+        seg(5, "srp", "SRP operation and pumping cycle",
+            "SRP dynacard ke liye telemetry chahiye. Data unavailable hai, isliye pump "
+            "diagnostics skip karke aage badhte hain.", "pump",
+            available=False, reason="dynacard requires telemetry")
+    # Ch6 CSS
+    if cycle and has_tele:
+        seg(6, "css", "CSS cycle",
+            f"CSS cycle: injection {_fnum(cycle.get('injection_days'), 0)} days, soak "
+            f"{_fnum(cycle.get('soak_days'), 0)} days, optimal cut-off day "
+            f"{cycle.get('optimal_cutoff_production_day')}, cycle SOR "
+            f"{_fnum(cycle.get('cycle_sor_t_per_bbl'), 4)}. "
+            f"{'Multi-cycle outlook bhi available hai. ' if multi else ''}"
+            f"Prototype thermal assumptions [PROTO] apply hote hain.", "reservoir",
+            [{"name": "cycle_sor", "value": cycle.get("cycle_sor_t_per_bbl"), "provenance": PHYSICS_PREDICTION}])
+    else:
+        seg(6, "css", "CSS cycle",
+            "CSS cycle analysis ke liye sufficient inputs nahi hain. Is chapter ko skip "
+            "karke alerts aur simulation par chalte hain.", "reservoir",
+            available=False, reason="CSS context unavailable")
+    # Ch7 alerts
+    if alerts:
+        seg(7, "alerts", "Alerts and diagnostics",
+            f"{len(alerts)} active alerts hain. Sabse important: "
+            + "; ".join(f"{a.get('title', a.get('type', '?'))} [{a.get('severity')}]"
+                        for a in alerts[:3])[:400]
+            + ". Ye screening indicators hain — confirmed equipment failure nahi.",
+            "panel")
+    else:
+        seg(7, "alerts", "Alerts and diagnostics",
+            "Koi active alert nahi hai. Ye healthy hone ka proof nahi — sirf current "
+            "screening me kuch trigger nahi hua.", "panel")
+    # Ch8 simulation (planned; executed by orchestrator when telemetry exists)
+    if has_tele and twin:
+        seg(8, "simulation", "Autonomous simulation",
+            f"Baseline {_fnum(twin.get('estimated_oil_production_bopd'))} bopd ke against ek bounded "
+            f"SPM scenario run karenge. Jo inputs change honge aur jo outputs improve ya worsen "
+            f"honge, wahi compare karenge. Agar engine error dega, to failure honestly report hoga.",
+            "pump")
+    else:
+        seg(8, "simulation", "Autonomous simulation",
+            "Telemetry ke bina simulation possible nahi — required inputs missing hain. "
+            "Isliye simulation skip.", "pump", available=False,
+            reason="simulation requires telemetry")
+    # Ch9 optimization
+    if opt and has_tele:
+        rec = opt.get("recommended") or {}
+        rec_in = rec.get("inputs") or {}
+        seg(9, "optimization", "Optimization and Pareto results",
+            f"Optimizer ne {opt.get('scenarios_evaluated')} scenarios evaluate kiye. Recommended: "
+            f"{_fnum(rec.get('estimated_oil_production_bopd'))} bopd at "
+            f"{_fnum(rec_in.get('steam_volume_t'), 0)} tonnes steam, "
+            f"{_fnum(rec_in.get('soak_time_h'), 0)} hours soak, SPM "
+            f"{_fnum(rec_in.get('spm'))}. Pareto frontier me "
+            f"{opt.get('pareto_count')} non-dominated candidates hain — production vs SOR vs "
+            f"energy vs risk ka trade-off. Ye prototype recommendation hai, field-validated nahi.",
+            "overview")
+    else:
+        seg(9, "optimization", "Optimization and Pareto results",
+            "Optimization ke liye valid inputs nahi mile, isliye ye chapter skip ho raha hai.",
+            "overview", available=False, reason="optimizer inputs unavailable")
+    # Ch10 summary
+    seg(10, "summary", "Final engineering summary",
+        f"Summary: findings panel me evidence references ke saath hain. "
+        f"{'Calibration ' + str((hybrid.get('calibration') or {}).get('status')) + ' hai. ' if hybrid else ''}"
+        f"Simulated values real well par apply nahi hue. Sabse useful next step: missing data "
+        f"check karke WHAT-IF me alternate scenario compare karein. Dhanyavaad.",
+        "overview")
+
+    completed = sum(1 for s in segs if s["available"])
+    skipped = [s for s in segs if not s["available"]]
+    return {"well_id": well_id, "segments": segs,
+            "coverage": {"total": len(segs), "available": completed,
+                         "skipped": [{"segment_id": s["segment_id"], "title": s["title"],
+                                      "reason": s["unavailable_reason"]} for s in skipped]},
+            "simulation_only": True}

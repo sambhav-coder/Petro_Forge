@@ -2030,8 +2030,31 @@ def _copilot_context(well_id: str) -> Dict[str, Any]:
     if record is None and public is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"Well '{well_id}' not found.")
+    # Extended evidence (all best-effort, read-only): CSS cycle, multi-cycle
+    # (bounded 2 cycles), analytics, optimizer (default grid), history stats.
+    cycle = multi = analytics_res = optimization = None
+    history_count = len(HISTORY.get(well_id, [])) if record is not None else 0
+    if record is not None:
+        try:
+            cycle = css_cycle.simulate_cycle(record)
+        except Exception:
+            cycle = None
+        try:
+            multi = css_cycle.simulate_multicycle(record, cycles=2)
+        except Exception:
+            multi = None
+        try:
+            analytics_res = analytics.analyze(list(HISTORY.get(well_id, [])))
+        except Exception:
+            analytics_res = None
+        try:
+            optimization = twin_optimize.optimize_well(record, None)
+        except Exception:
+            optimization = None
     return {"well_id": well_id, "telemetry": telemetry, "twin": twin,
             "hybrid": hybrid, "dynacard": dynacard, "alerts": alerts[:10],
+            "cycle": cycle, "multi": multi, "analytics": analytics_res,
+            "optimization": optimization, "history_count": history_count,
             "provenance": provenance,
             "public": bool(public), "record": record}
 
@@ -2088,6 +2111,26 @@ async def copilot_analyze(req: CopilotAnalyzeRequest):
             "findings": findings, "narration": segments,
             "provenance": copilot.presentation_provenance(ctx["provenance"]),
             "limitations": [copilot.SIMULATION_ONLY_NOTE], "simulation_only": True}
+
+
+class CopilotPlanRequest(BaseModel):
+    well_id: str = Field(..., min_length=1, max_length=64)
+
+
+@app.post("/api/v1/copilot/plan", tags=["AI Co-Pilot"])
+async def copilot_plan(req: CopilotPlanRequest):
+    """Full 10-chapter presentation plan from validated evidence (read-only).
+
+    Unavailable chapters carry available=False + reason (never fictional data).
+    """
+    ctx = _copilot_context(req.well_id)
+    mode = copilot.llm_mode()
+    plan = copilot.build_presentation_plan(ctx)
+    plan["mode"] = mode["mode"]
+    plan["llm"] = mode
+    plan["limitations"] = [copilot.SIMULATION_ONLY_NOTE,
+                           "Prototype physics [PROTO]; not field-validated."]
+    return plan
 
 
 @app.post("/api/v1/copilot/simulate", tags=["AI Co-Pilot"])

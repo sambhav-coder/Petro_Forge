@@ -31,6 +31,10 @@ import type { CopilotState } from "@/lib/types";
 const FieldScene = dynamic(() => import("@/components/FieldScene"), {
   ssr: false,
 });
+const SceneErrorBoundary = dynamic(
+  () => import("@/components/FieldScene").then((m) => m.SceneErrorBoundary),
+  { ssr: false }
+);
 
 /* 7 panel categories that appear as compact pills */
 type PanelKind =
@@ -283,16 +287,24 @@ export default function Home() {
     }
   };
 
-  /* Co-Pilot highlight → camera/isolate sync (schematic highlight only). */
+  /* Co-Pilot focus → camera/isolate sync (schematic highlight only).
+     CameraRig smooth-transitions on preset change; user drag cancels auto-move. */
   const handleCopilotHighlight = useCallback((kind: string) => {
-    if (kind === "pump") {
+    if (kind === "pump" || kind === "srp" || kind === "rod") {
       setPreset("PUMP");
       setIsolated("pump");
-    } else if (kind === "reservoir") {
+    } else if (kind === "reservoir" || kind === "thermal") {
       setPreset("RESERVOIR");
       setIsolated("reservoir");
+    } else if (kind === "wellbore") {
+      setPreset("WELLBORE");
+      setIsolated("tubing");
+    } else if (kind === "overview" || kind === "panel") {
+      setPreset("FIELD");
+      setIsolated(null);
     } else {
       setPreset("WELL");
+      setIsolated(null);
     }
   }, []);
 
@@ -646,6 +658,7 @@ export default function Home() {
         {/* 3D scene */}
         <div className="flex-1 relative min-w-0">
           {wells && wells.wells.length > 0 ? (
+            <SceneErrorBoundary>
             <FieldScene
               wells={wells.wells}
               twins={twins}
@@ -659,6 +672,7 @@ export default function Home() {
               showEngineer={copilotOpen}
               engineerMode={engineerMode}
             />
+            </SceneErrorBoundary>
           ) : (
             !loading && (
               <div className="absolute inset-0 flex items-center justify-center p-4">

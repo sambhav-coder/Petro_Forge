@@ -98,3 +98,88 @@ export function findingSeverityTone(sev: string): string {
   if (s === "INFO") return "text-natural border-natural/30 bg-natural/10";
   return "text-sand/70 border-natural/15 bg-oil-black/40";
 }
+
+/* ---- 2.0: full presentation plan runner ---- */
+
+export interface PlanSegment {
+  segment_id: string;
+  well_id: string;
+  sequence: number;
+  stage: string;
+  title: string;
+  narration_text: string;
+  spoken_text: string;
+  speech_chunks: string[];
+  evidence_refs: string[];
+  data_provenance: string;
+  component_focus: string;
+  camera_action: string;
+  related_values: Array<{ name: string; value: number | string | null; provenance?: string }>;
+  animation_action: string;
+  simulation_id: string | null;
+  duration_hint_s: number;
+  completion_condition: string;
+  available: boolean;
+  unavailable_reason: string;
+}
+
+export interface PresentationPlan {
+  well_id: string;
+  segments: PlanSegment[];
+  coverage: {
+    total: number;
+    available: number;
+    skipped: Array<{ segment_id: string; title: string; reason: string }>;
+  };
+  simulation_only: boolean;
+}
+
+export type SegmentEvent =
+  | { type: "segment-start"; segment: PlanSegment; index: number; total: number }
+  | { type: "segment-end"; segment: PlanSegment; index: number }
+  | { type: "complete"; completed: number; skipped: number };
+
+/**
+ * Execute the full presentation: for each available segment, apply camera
+ * focus, speak its text, and advance ONLY on audio completion (or text dwell
+ * when voice is off). Skipped chapters are reported, never silently dropped.
+ * Pause/resume/skip/stop driven by the controller callbacks from the panel.
+ */
+export interface PresentationController {
+  waitTurn: (segment: PlanSegment, index: number) => Promise<"next" | "replay" | "stop">;
+  speakAndWait: (segment: PlanSegment) => Promise<void>;
+  onEvent: (e: SegmentEvent) => void;
+  isAlive: () => boolean;
+}
+
+export async function runPresentation(
+  plan: PresentationPlan,
+  ctl: PresentationController
+): Promise<{ completed: number; skipped: number }> {
+  let completed = 0;
+  const skipped = plan.coverage.skipped.length;
+  const total = plan.segments.length;
+  for (let i = 0; i < plan.segments.length; i += 1) {
+    if (!ctl.isAlive()) throw new Error("__CANCELLED__");
+    const seg = plan.segments[i];
+    if (!seg.available) continue; // counted in coverage.skipped
+    ctl.onEvent({ type: "segment-start", segment: seg, index: i, total });
+    // eslint-disable-next-line no-await-in-loop
+    await ctl.speakAndWait(seg);
+    if (!ctl.isAlive()) throw new Error("__CANCELLED__");
+    ctl.onEvent({ type: "segment-end", segment: seg, index: i });
+    completed += 1;
+    // eslint-disable-next-line no-await-in-loop
+    const turn = await ctl.waitTurn(seg, i);
+    if (turn === "stop") throw new Error("__CANCELLED__");
+    if (turn === "replay") {
+      if (!ctl.isAlive()) throw new Error("__CANCELLED__");
+      ctl.onEvent({ type: "segment-start", segment: seg, index: i, total });
+      // eslint-disable-next-line no-await-in-loop
+      await ctl.speakAndWait(seg);
+      ctl.onEvent({ type: "segment-end", segment: seg, index: i });
+    }
+  }
+  ctl.onEvent({ type: "complete", completed, skipped });
+  return { completed, skipped };
+}

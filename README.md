@@ -435,10 +435,18 @@ one bounded simulation (SPM+1, ≤3 scenarios/session) comparing baseline vs
 SIMULATION-labelled output. Follow-up Q&A via text or mic (browser STT).
 
 - Architecture: `project/copilot.py` (evidence/findings/Hinglish templates/tool
-  allowlist/budgets) + `POST /api/v1/copilot/{session,analyze,simulate,ask}`;
-  frontend `lib/copilot.ts` (state machine), `lib/voice.ts`, `components/
-  CopilotPanel.tsx`, `components/AIEngineer.tsx` (procedural PPE engineer inside
-  the existing R3F canvas; no extra WebGL context, no geometry/physics edits).
+  allowlist/budgets + 2.0 speech helpers and 10-chapter presentation planner) +
+  `POST /api/v1/copilot/{session,analyze,simulate,ask,plan}`; frontend
+  `lib/copilot.ts` (state machine + completion-chained `runPresentation`),
+  `lib/voice.ts` (hi-IN voice pick, abbreviation expansion, chunked queue),
+  `components/CopilotPanel.tsx` (chapter timeline, subtitles, sim compare, Q&A),
+  `components/AIEngineer.tsx` (procedural PPE engineer inside the existing R3F
+  canvas; no extra WebGL context, no geometry/physics edits).
+- One Live press runs all 10 chapters (welcome → model → telemetry → hybrid →
+  SRP → CSS → alerts → simulation → optimization → summary), each with
+  camera focus sync (CameraRig smooth-transition; user drag cancels auto-move),
+  narration chained on audio end, and a completion report (presented/skipped).
+  Unavailable chapters are skipped with reasons, never fictional data.
 - Session states: IDLE→INITIALIZING→COLLECTING_EVIDENCE→ANALYZING→SIMULATING→
   NARRATING→COMPLETED, plus PAUSED/INSUFFICIENT_DATA/PARTIAL_RESULTS/ERROR/
   CANCELLED. Stale sessions cancelled on well-switch; duplicate Live clicks
@@ -454,7 +462,16 @@ SIMULATION-labelled output. Follow-up Q&A via text or mic (browser STT).
 - Safety: read-only + bounded simulate only; no SCADA/PLC/control endpoints, no
   telemetry/history writes, all sims Pydantic-bounded and labelled SIMULATION.
 - Voice: `hi-IN` speechSynthesis TTS + mic STT after explicit click; text-only
-  mode fully works; no audio recorded/uploaded/retained.
+  mode fully works; no audio recorded/uploaded/retained. 2.0 speaks via a
+  completion-chained chunk queue (sentence-aware ≤200-char chunks, SPM/SOR/CSS
+  letter-spaced, IDs/timestamps/JSON stripped) with preferred hi-IN voice
+  selection. Cyber Sakhi voice reference was NOT accessible in this workspace
+  (no local checkout found; nothing copied) — no voice parity claimed; the
+  pipeline accepts any server neural provider later without caller changes.
+- 3D reliability: `SceneErrorBoundary` keeps panels usable on WebGL failure;
+  overview reset action; reduced-motion respected.
+- Tests: `project/test_copilot.py` (11 live-API tests incl. 10-chapter plan,
+  public-well honest skips, speech-text hygiene, seeded demo, no creds);
 - Tests: `project/test_copilot.py` (7 live-API tests, seeded demo, no creds);
   full suite `pytest -q` in `project/`; frontend `npm run lint`, `npx tsc --noEmit`,
   `npm run build` with production API base.

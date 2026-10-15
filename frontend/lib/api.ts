@@ -141,6 +141,8 @@ export const api = {
   historyCoverage: (wellId: string) => request<WellCoverageSummary>(`/api/v1/history/coverage/${encodeURIComponent(wellId)}`),
   copilotSession: (wellId: string) =>
     request<import("./types").CopilotSession>(`/api/v1/copilot/session`, post({ well_id: wellId })),
+  copilotPlan: (wellId: string) =>
+    request<import("./copilot").PresentationPlan>(`/api/v1/copilot/plan`, post({ well_id: wellId })),
   copilotAnalyze: (wellId: string, stages?: string[]) =>
     request<{ well_id: string; findings: import("./types").CopilotFinding[]; narration: import("./types").CopilotNarration[] }>(
       `/api/v1/copilot/analyze`, post({ well_id: wellId, stages })),
