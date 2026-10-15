@@ -489,7 +489,7 @@ export default function Inspector({
   }, [tab, wellId, telemetry]);
 
   return (
-    <aside className="glass rounded-none border-l border-slate-700/40 w-[400px] shrink-0 flex flex-col min-h-0 relative">
+    <aside data-inspector-root="detail-panel" className="glass rounded-none border-l border-slate-700/40 w-[400px] shrink-0 flex flex-col min-h-0 relative">
       {onClose && (
         <button
           onClick={onClose}

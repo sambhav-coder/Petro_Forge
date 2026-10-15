@@ -81,8 +81,13 @@ export default function CopilotPanel({
     // One authoritative segment drives camera + panel + narration together.
     onHighlight(seg.component_focus);
     onRequestPanel(seg.panel_tab);
+    // Bring the matching Inspector results into view (once per chapter).
     try {
-      document.getElementById("copilot-right-panel")?.scrollTo({ top: 0, behavior: "smooth" });
+      requestAnimationFrame(() => {
+        try {
+          document.querySelector("[data-inspector-root]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch { /* scroll is best-effort */ }
+      });
     } catch { /* scroll is best-effort */ }
   }, [onHighlight, onRequestPanel]);
 
