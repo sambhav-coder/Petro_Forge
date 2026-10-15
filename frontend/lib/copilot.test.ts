@@ -49,6 +49,7 @@ function planOf(segments: PlanSegment[]): PresentationPlan {
 describe("copilot state machine", () => {
   it("allows the presentation lifecycle and rejects jumps", () => {
     expect(canTransition("IDLE", "INITIALIZING")).toBe(true);
+    expect(canTransition("INITIALIZING", "NARRATING")).toBe(true);
     expect(canTransition("NARRATING", "COMPLETED")).toBe(true);
     expect(canTransition("PAUSED", "NARRATING")).toBe(true);
     expect(canTransition("IDLE", "COMPLETED")).toBe(false);

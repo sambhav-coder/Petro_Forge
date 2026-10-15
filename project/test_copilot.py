@@ -176,6 +176,22 @@ def test_speech_helpers_no_ids_or_json():
     spoken = cp.to_speech_text("Well cpl-abcdef1234 at 2026-10-15T09:00:00Z runs 5 SPM, SOR 0.1, 22.5 bopd {\"a\":1}")
     assert "cpl-" not in spoken and "2026" not in spoken and "{" not in spoken
     assert "S P M" in spoken and "S O R" in spoken
+    assert cp._phase("CSSPhase.INJECTION") == "INJECTION"
+    assert cp._phase("PRODUCTION") == "PRODUCTION"
+
+
+def test_narration_never_leaks_enum_repr():
+    """Live finding/plan narration must show clean phase names (no CSSPhase.X)."""
+    import copilot as cp
+    ctx = {"well_id": "W-1",
+           "telemetry": {"css_phase": "CSSPhase.INJECTION", "oil_rate_bopd": 0.0},
+           "twin": {"estimated_oil_production_bopd": 1.0, "production_limiting_factor": "X"}}
+    for f in cp.build_findings(ctx):
+        assert "CSSPhase" not in f["explanation"]
+    plan = cp.build_presentation_plan(ctx)
+    for s in plan["segments"]:
+        assert "CSSPhase" not in s["narration_text"]
+        assert "CSSPhase" not in s["spoken_text"]
 
 
 def test_plan_chapter_camera_and_panel_mapping():

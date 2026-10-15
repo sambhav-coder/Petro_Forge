@@ -150,7 +150,7 @@ def build_findings(context: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     if tele:
         add("F-BASELINE", "Baseline operating state", "INFO",
-            f"Well {well_id} phase {tele.get('css_phase')} at "
+            f"Well {well_id} phase {_phase(tele.get('css_phase'))} at "
             f"{tele.get('oil_rate_bopd')} bopd (measured telemetry).",
             [{"name": "oil_rate_bopd", "value": tele.get("oil_rate_bopd"),
               "unit": "bopd", "provenance": OBSERVED}],
@@ -205,7 +205,7 @@ def build_findings(context: Dict[str, Any]) -> List[Dict[str, Any]]:
 def narrate_hinglish(stage: str, ctx: Dict[str, Any]) -> str:
     """Deterministic Hindi/Hinglish fallback narration (labelled, not LLM)."""
     well = ctx.get("well_id", "selected well")
-    phase = (ctx.get("telemetry") or {}).get("css_phase", "unknown phase")
+    phase = _phase((ctx.get("telemetry") or {}).get("css_phase", "unknown phase"))
     twin_oil = (ctx.get("twin") or {}).get("estimated_oil_production_bopd", "—")
     templates = {
         "baseline": (
@@ -332,6 +332,18 @@ def _fnum(value: Any, digits: int = 1) -> str:
         return "unavailable"
 
 
+def _phase(value: Any) -> str:
+    """Display form of a CSS phase enum ('CSSPhase.INJECTION' -> 'INJECTION').
+
+    Live telemetry may carry the raw enum repr; narration must speak clean
+    phase names, never dotted internals.
+    """
+    text = str(value if value is not None else "unknown")
+    if "." in text:
+        text = text.split(".")[-1]
+    return text or "unknown"
+
+
 # component_focus -> frontend camera preset + isolate target.
 _FOCUS_CAMERA = {
     "well": "WELL", "wellhead": "WELL", "srp": "PUMP", "rod": "PUMP",
@@ -419,7 +431,7 @@ def build_presentation_plan(ctx: Dict[str, Any]) -> Dict[str, Any]:
             calib_hint = (f" History calibration {cal.get('status')} over "
                           f"{cal.get('points')} points. " if cal.get("status") else "")
         seg(3, "telemetry", "Live telemetry and operating context",
-            f"Current readings: phase {tele.get('css_phase')}, production "
+            f"Current readings: phase {_phase(tele.get('css_phase'))}, production "
             f"{_fnum(tele.get('oil_rate_bopd'))} bopd, SPM {_fnum(tele.get('spm'))}, "
             f"stroke {_fnum(tele.get('stroke_in'), 0)} inch, steam "
             f"{_fnum(tele.get('steam_volume_t'), 0)} tonnes, soak "

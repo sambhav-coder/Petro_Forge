@@ -6,7 +6,7 @@ import type { CopilotFinding, CopilotSession, CopilotSimulateResponse, CopilotSt
 /* Co-Pilot session state machine: deterministic, testable transitions. */
 const TRANSITIONS: Record<CopilotState, CopilotState[]> = {
   IDLE: ["INITIALIZING"],
-  INITIALIZING: ["COLLECTING_EVIDENCE", "ERROR", "CANCELLED"],
+  INITIALIZING: ["COLLECTING_EVIDENCE", "NARRATING", "ERROR", "CANCELLED"],
   COLLECTING_EVIDENCE: ["ANALYZING", "INSUFFICIENT_DATA", "PARTIAL_RESULTS", "ERROR", "CANCELLED"],
   ANALYZING: ["SIMULATING", "NARRATING", "PARTIAL_RESULTS", "ERROR", "CANCELLED"],
   SIMULATING: ["NARRATING", "PARTIAL_RESULTS", "ERROR", "CANCELLED"],
