@@ -23,7 +23,10 @@ import type {
 import Inspector from "@/components/Inspector";
 import Logo from "@/components/Logo";
 import AlertsDrawer from "@/components/AlertsDrawer";
+import CopilotPanel from "@/components/CopilotPanel";
+import type { EngineerMode } from "@/components/AIEngineer";
 import { SecondaryButton } from "@/components/ui";
+import type { CopilotState } from "@/lib/types";
 
 const FieldScene = dynamic(() => import("@/components/FieldScene"), {
   ssr: false,
@@ -82,6 +85,11 @@ export default function Home() {
   /* ===== NEW UI STATE ===== */
   // Inspector panel expanded / collapsed
   const [inspectorOpen, setInspectorOpen] = useState<boolean>(false);
+  // AI Co-Pilot session panel + Live auto-start key + avatar state
+  const [copilotOpen, setCopilotOpen] = useState<boolean>(false);
+  const [copilotKey, setCopilotKey] = useState<number>(0);
+  const [engineerMode, setEngineerMode] = useState<EngineerMode>("idle");
+  const [, setCopilotStage] = useState<CopilotState>("IDLE");
   // Single command dock (collapsed by default) + footer view popover
   const [dockOpen, setDockOpen] = useState<boolean>(false);
   const [viewPop, setViewPop] = useState<boolean>(false);
@@ -259,12 +267,34 @@ export default function Home() {
       const st = overview?.live.running ? await api.liveStop() : await api.liveStart(2);
       setOverview((o) => (o ? { ...o, live: st } : o));
       loadFieldStatus();
+      // AI Co-Pilot: pressing Live starts the guided session for the selected well.
+      if (!overview?.live.running && selectedRef.current) {
+        setCopilotOpen(true);
+        setInspectorOpen(true);
+        setCopilotKey((k) => k + 1);
+        setEngineerMode("explaining");
+      } else if (overview?.live.running) {
+        setEngineerMode("idle");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Live toggle failed");
     } finally {
       setLiveBusy(false);
     }
   };
+
+  /* Co-Pilot highlight → camera/isolate sync (schematic highlight only). */
+  const handleCopilotHighlight = useCallback((kind: string) => {
+    if (kind === "pump") {
+      setPreset("PUMP");
+      setIsolated("pump");
+    } else if (kind === "reservoir") {
+      setPreset("RESERVOIR");
+      setIsolated("reservoir");
+    } else {
+      setPreset("WELL");
+    }
+  }, []);
 
   const ackAlert = async (id: string) => {
     await api.ackAlert(id).catch(() => undefined);
@@ -425,7 +455,7 @@ export default function Home() {
         <button
           onClick={toggleLive}
           disabled={liveBusy || !connected || !wells || wells.wells.length === 0}
-          title="Stream synthetic field readings through the ingest pipeline"
+          title="Stream synthetic field readings + start AI Co-Pilot guided session for the selected well"
           className={`pill-btn text-[10px] font-mono font-bold tracking-[0.1em] uppercase px-2.5 py-1.5 rounded-lg border disabled:opacity-40 ${
             live
               ? "bg-rose-500/12 text-rose-300 border-rose-500/30"
@@ -433,6 +463,27 @@ export default function Home() {
           }`}
         >
           {live ? "● LIVE" : "▶ LIVE"}
+        </button>
+
+        {/* AI Co-Pilot toggle */}
+        <button
+          onClick={() => {
+            setCopilotOpen((o) => !o);
+            if (!copilotOpen && selectedWellId) {
+              setInspectorOpen(true);
+              setCopilotKey((k) => k + 1);
+            }
+          }}
+          disabled={!selectedWellId}
+          title="Open AI Co-Pilot guided well analysis (Hindi/Hinglish, simulation-only)"
+          aria-expanded={copilotOpen}
+          className={`pill-btn text-[10px] font-mono font-bold tracking-[0.1em] uppercase px-2.5 py-1.5 rounded-lg border disabled:opacity-40 ${
+            copilotOpen
+              ? "bg-natural/20 text-natural border-natural/40"
+              : "bg-oil-black/40 text-sand/85 border-natural/15 hover:border-natural/30"
+          }`}
+        >
+          🤖 AI
         </button>
 
         {/* Alerts */}
@@ -605,6 +656,8 @@ export default function Home() {
               focusWellId={selectedWellId}
               viewMode={viewMode}
               isolated={isolated}
+              showEngineer={copilotOpen}
+              engineerMode={engineerMode}
             />
           ) : (
             !loading && (
@@ -700,8 +753,19 @@ export default function Home() {
             borderLeftWidth: inspectorOpen ? "1px" : "0px",
           }}
         >
-          {inspectorOpen && (
-            <Inspector
+          {(inspectorOpen || copilotOpen) && (
+            <div className="w-full h-full overflow-y-auto p-2 space-y-2">
+              {copilotOpen && (
+                <CopilotPanel
+                  wellId={selectedWellId}
+                  autoStartKey={copilotKey}
+                  onHighlight={handleCopilotHighlight}
+                  onSpeakState={setEngineerMode}
+                  onStage={setCopilotStage}
+                />
+              )}
+              {inspectorOpen && (
+              <Inspector
               selection={selection}
               wellId={selectedWellId}
               telemetry={telemetry}
@@ -729,6 +793,8 @@ export default function Home() {
                 forcedTabRef.current = null;
               }}
             />
+              )}
+            </div>
           )}
         </div>
       </div>

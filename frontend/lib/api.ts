@@ -139,6 +139,16 @@ export const api = {
     limit?: number;
   }) => request<HistoryResponse>(`/api/v1/history?${new URLSearchParams(params as Record<string, string>).toString()}`),
   historyCoverage: (wellId: string) => request<WellCoverageSummary>(`/api/v1/history/coverage/${encodeURIComponent(wellId)}`),
+  copilotSession: (wellId: string) =>
+    request<import("./types").CopilotSession>(`/api/v1/copilot/session`, post({ well_id: wellId })),
+  copilotAnalyze: (wellId: string, stages?: string[]) =>
+    request<{ well_id: string; findings: import("./types").CopilotFinding[]; narration: import("./types").CopilotNarration[] }>(
+      `/api/v1/copilot/analyze`, post({ well_id: wellId, stages })),
+  copilotSimulate: (wellId: string, scenarios: Record<string, number>[]) =>
+    request<import("./types").CopilotSimulateResponse>(`/api/v1/copilot/simulate`, post({ well_id: wellId, scenarios })),
+  copilotAsk: (wellId: string, question: string, sessionId?: string) =>
+    request<{ answer: string; mode: string; evidence_refs: string[] }>(
+      `/api/v1/copilot/ask`, post({ well_id: wellId, question, session_id: sessionId })),
   
   // Priority 3: ML Intelligence API
   mlStatus: () => request<MLStatus>("/api/v1/ml/status"),

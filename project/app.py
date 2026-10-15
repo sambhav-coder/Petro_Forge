@@ -47,6 +47,7 @@ from typing import Annotated, Any, Dict, List, Optional
 import uvicorn
 
 import analytics
+import copilot
 import css_cycle
 import hybrid_twin  # canonical Hybrid Twin assembly (P4, reuses canonical modules)
 import live_field
@@ -1961,6 +1962,190 @@ async def stream(request: Request, max_events: Optional[int] = Query(default=Non
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+class CopilotSessionRequest(BaseModel):
+    well_id: str = Field(..., min_length=1, max_length=64)
+
+
+class CopilotAnalyzeRequest(BaseModel):
+    well_id: str = Field(..., min_length=1, max_length=64)
+    stages: Optional[List[str]] = Field(default=None, max_length=10)
+
+
+class CopilotSimulateRequest(BaseModel):
+    well_id: str = Field(..., min_length=1, max_length=64)
+    scenarios: List[Dict[str, Any]] = Field(..., min_length=1, max_length=3)
+
+
+class CopilotAskRequest(BaseModel):
+    well_id: str = Field(..., min_length=1, max_length=64)
+    question: str = Field(..., min_length=1, max_length=2000)
+    session_id: Optional[str] = Field(default=None, max_length=64)
+
+
+def _copilot_context(well_id: str) -> Dict[str, Any]:
+    """Assemble validated evidence from EXISTING builders (read-only, best-effort per source)."""
+    record = WELL_STORE.get(well_id)
+    public = PUBLIC_WELLS.get(well_id) if record is None else None
+    telemetry = None
+    twin = None
+    if record is not None:
+        try:
+            telemetry = record.model_dump() if hasattr(record, "model_dump") else dict(record)
+        except Exception:
+            telemetry = {"well_id": well_id}
+        try:
+            twin = twin_physics.twin_snapshot(record)
+        except Exception:
+            twin = None
+    hybrid = None
+    if record is not None and twin is not None:
+        try:
+            history = list(HISTORY.get(well_id, []))
+            hybrid = hybrid_twin.build_hybrid_twin(well_id, record, twin, history)
+        except Exception:
+            hybrid = {"status": "UNAVAILABLE", "note": "hybrid assembly failed"}
+    dynacard = None
+    if record is not None and twin is not None:
+        try:
+            card = srp_dynacard.dynacard(twin, record.api_gravity)
+            try:
+                card["pump_performance"] = srp_performance.performance_summary(twin, card, None)
+            except Exception:
+                pass
+            dynacard = card
+        except Exception:
+            dynacard = None
+    alerts: List[Dict[str, Any]] = []
+    try:
+        for a in ALERTS:
+            d = a.model_dump() if hasattr(a, "model_dump") else dict(a)
+            if d.get("well_id") == well_id and d.get("active", True):
+                alerts.append(d)
+    except Exception:
+        alerts = []
+    provenance = "BAGHEWALA_FIELD" if public else (
+        telemetry.get("provenance", "LIVE_TELEMETRY") if isinstance(telemetry, dict) else "LIVE_TELEMETRY")
+    if record is None and public is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Well '{well_id}' not found.")
+    return {"well_id": well_id, "telemetry": telemetry, "twin": twin,
+            "hybrid": hybrid, "dynacard": dynacard, "alerts": alerts[:10],
+            "provenance": provenance,
+            "public": bool(public), "record": record}
+
+
+@app.post("/api/v1/copilot/session", tags=["AI Co-Pilot"])
+async def copilot_session(req: CopilotSessionRequest):
+    """Initialize a read-only Co-Pilot session: evidence summary + planned stages.
+
+    Simulation-only: no control, no persistence of scenarios.
+    """
+    ctx = _copilot_context(req.well_id)
+    mode = copilot.llm_mode()
+    stages = ["baseline", "diagnostics"]
+    if ctx.get("twin"):
+        stages.append("physics")
+    if ctx.get("dynacard"):
+        stages.append("srp")
+    stages += ["css", "summary"]
+    findings = copilot.build_findings(ctx)
+    limitations = [copilot.SIMULATION_ONLY_NOTE,
+                   "Prototype physics [PROTO]; not field-validated.",
+                   "ML evidence (if any) is synthetic and kept separate."]
+    if ctx.get("public"):
+        limitations.append("Public record only: no live telemetry; twin unavailable.")
+    return {"session_id": copilot.new_session_id(), "well_id": req.well_id,
+            "mode": mode["mode"], "llm": mode,
+            "provenance": {"source": ctx["provenance"],
+                           "presentation": copilot.presentation_provenance(ctx["provenance"])},
+            "has_telemetry": ctx.get("telemetry") is not None,
+            "stages": stages, "findings": findings[:6],
+            "narration": {"stage": "baseline",
+                          "text": copilot.narrate_hinglish("baseline", ctx),
+                          "language": "hi-Hinglish"},
+            "budgets": {"max_auto_sims": copilot.MAX_AUTO_SIMS,
+                        "max_tool_calls": copilot.MAX_TOOL_CALLS},
+            "limitations": limitations, "simulation_only": True}
+
+
+@app.post("/api/v1/copilot/analyze", tags=["AI Co-Pilot"])
+async def copilot_analyze(req: CopilotAnalyzeRequest):
+    """Structured findings + Hinglish narration segments for requested stages."""
+    ctx = _copilot_context(req.well_id)
+    mode = copilot.llm_mode()
+    stages = req.stages or ["baseline", "diagnostics", "summary"]
+    if len(stages) > 10:
+        raise HTTPException(status_code=422, detail="Too many stages (max 10).")
+    findings = copilot.build_findings(ctx)
+    segments = [{"stage": s, "text": copilot.narrate_hinglish(s, ctx),
+                 "language": "hi-Hinglish",
+                 "highlight": {"baseline": "well", "diagnostics": "pump",
+                               "css": "reservoir", "simulation": "pump",
+                               "summary": "well"}.get(s, "well")} for s in stages]
+    return {"well_id": req.well_id, "mode": mode["mode"], "llm": mode,
+            "findings": findings, "narration": segments,
+            "provenance": copilot.presentation_provenance(ctx["provenance"]),
+            "limitations": [copilot.SIMULATION_ONLY_NOTE], "simulation_only": True}
+
+
+@app.post("/api/v1/copilot/simulate", tags=["AI Co-Pilot"])
+async def copilot_simulate(req: CopilotSimulateRequest):
+    """Bounded simulation-only orchestration (max 3 scenarios, validated bounds).
+
+    Uses the existing simulate path on in-memory copies; WELL_STORE/HISTORY are
+    never modified and nothing is persisted.
+    """
+    ctx = _copilot_context(req.well_id)
+    record = ctx.get("record")
+    if record is None:
+        raise HTTPException(status_code=422, detail="Simulation requires telemetry; public-only well has none.")
+    if len(req.scenarios) > copilot.MAX_AUTO_SIMS:
+        raise HTTPException(status_code=422,
+                            detail=f"Too many scenarios (max {copilot.MAX_AUTO_SIMS}).")
+    current = twin_physics.twin_snapshot(record)
+    results = []
+    for i, sc in enumerate(req.scenarios):
+        errors = copilot.validate_scenario(sc or {})
+        if errors:
+            raise HTTPException(status_code=422, detail={"scenario": i, "errors": errors})
+        overrides = dict(sc)
+        if "vfd_percent" in overrides and "spm" not in overrides:
+            overrides["spm"] = twin_physics.spm_for_vfd(overrides["vfd_percent"])
+        elif "spm" in overrides:
+            overrides["vfd_percent"] = twin_physics.vfd_for_spm(overrides["spm"])
+        hypo = twin_optimize.apply_scenario(record, overrides)
+        projected = twin_physics.twin_snapshot(hypo)
+        delta = twin_optimize.compare_snapshots(current, projected)
+        results.append({"simulation_id": f"sim-{i + 1}", "inputs": overrides,
+                        "scenario": projected, "delta": delta,
+                        "label": "SIMULATION"})
+    return {"well_id": req.well_id, "mode": copilot.llm_mode()["mode"],
+            "baseline": current, "baseline_label": "OBSERVED_BASELINE",
+            "simulations": results,
+            "narration": {"stage": "simulation",
+                          "text": copilot.narrate_hinglish("simulation", ctx),
+                          "language": "hi-Hinglish"},
+            "limitations": [copilot.SIMULATION_ONLY_NOTE,
+                            "Prototype physics [PROTO]; not field-validated."],
+            "simulation_only": True}
+
+
+@app.post("/api/v1/copilot/ask", tags=["AI Co-Pilot"])
+async def copilot_ask(req: CopilotAskRequest):
+    """Follow-up Q&A grounded in session evidence (tool allowlist enforced).
+
+    Only logical tools in copilot.ALLOWED_TOOLS may inform the answer; arbitrary
+    URLs/SQL/shell/filesystem access is never available. Control requests refused.
+    """
+    ctx = _copilot_context(req.well_id)
+    ans = copilot.answer_fallback(req.question, ctx)
+    return {"well_id": req.well_id, "session_id": req.session_id,
+            "mode": ans["mode"], "answer": ans["answer"],
+            "evidence_refs": ans["evidence_refs"],
+            "allowed_tools": list(copilot.ALLOWED_TOOLS),
+            "limitations": [copilot.SIMULATION_ONLY_NOTE], "simulation_only": True}
 
 
 if __name__ == "__main__":

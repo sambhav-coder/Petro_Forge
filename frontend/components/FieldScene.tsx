@@ -9,6 +9,7 @@ import WellAssembly from "./WellAssembly";
 import CameraRig from "./CameraRig";
 import Environment from "./Environment";
 import PressureOverlay, { PRESSURE_OVERLAY_ENABLED } from "./PressureOverlay";
+import AIEngineer, { type EngineerMode } from "./AIEngineer";
 
 export default function FieldScene({
   wells,
@@ -20,6 +21,8 @@ export default function FieldScene({
   focusWellId,
   viewMode,
   isolated,
+  showEngineer = false,
+  engineerMode = "idle",
 }: {
   wells: WellSummary[];
   twins: Record<string, TwinSnapshot>;
@@ -30,6 +33,8 @@ export default function FieldScene({
   focusWellId: string | null;
   viewMode: ViewMode;
   isolated: IsolatableKind | null;
+  showEngineer?: boolean;
+  engineerMode?: EngineerMode;
 }) {
   const sites = wells.map((_, i) => i * LAYOUT.wellSpacing);
   const focusIdx = Math.max(
@@ -89,6 +94,11 @@ export default function FieldScene({
       <CameraRig preset={preset} focusX={focusX} />
       {PRESSURE_OVERLAY_ENABLED && focusWellId && (
         <PressureOverlay wellId={focusWellId} twin={twins[focusWellId] ?? null} visible />
+      )}
+      {/* AI Co-Pilot engineer: positioned beside the focused well, never
+          modifies well geometry/physics inputs; schematic figure only. */}
+      {showEngineer && (
+        <AIEngineer mode={engineerMode} position={[focusX + 5.5, 0, 5.5]} />
       )}
     </Canvas>
   );

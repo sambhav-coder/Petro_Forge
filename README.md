@@ -425,6 +425,44 @@ missing Supabase config) — investigate the backend or secrets; a SLOW_START
 
 Tests: `project/test_monitoring.py` (17 mocked cases, no live credentials).
 
+## 13d. 🤖 AI Co-Pilot — autonomous guided well analysis (simulation-only)
+
+Press **▶ LIVE** (or **🤖 AI**) on `/twin` with a well selected: the Co-Pilot
+collects validated evidence (telemetry, Hybrid Twin, dynacard/SRP, CSS context,
+alerts), builds provenance-labelled findings, narrates in Hindi/Hinglish with
+subtitles/transcript, highlights the 3D model (pump/reservoir/well), and runs
+one bounded simulation (SPM+1, ≤3 scenarios/session) comparing baseline vs
+SIMULATION-labelled output. Follow-up Q&A via text or mic (browser STT).
+
+- Architecture: `project/copilot.py` (evidence/findings/Hinglish templates/tool
+  allowlist/budgets) + `POST /api/v1/copilot/{session,analyze,simulate,ask}`;
+  frontend `lib/copilot.ts` (state machine), `lib/voice.ts`, `components/
+  CopilotPanel.tsx`, `components/AIEngineer.tsx` (procedural PPE engineer inside
+  the existing R3F canvas; no extra WebGL context, no geometry/physics edits).
+- Session states: IDLE→INITIALIZING→COLLECTING_EVIDENCE→ANALYZING→SIMULATING→
+  NARRATING→COMPLETED, plus PAUSED/INSUFFICIENT_DATA/PARTIAL_RESULTS/ERROR/
+  CANCELLED. Stale sessions cancelled on well-switch; duplicate Live clicks
+  reuse one run token.
+- Provenance preserved (OBSERVED/HISTORICAL/DERIVED/PHYSICS_PREDICTION/
+  CALIBRATED_TWIN/SIMULATION/SYNTHETIC_DEMO/UNAVAILABLE); missing stays missing.
+- LLM: provider abstraction server-side (`COPILOT_LLM_PROVIDER/MODEL/API_KEY`
+  on Render only). Unset = labelled FALLBACK_TEMPLATE narration (never claimed
+  as LLM). Keys never in `NEXT_PUBLIC_*`, bundles, or logs.
+- 3D avatar: procedural placeholder (honest — no licensed/photorealistic model
+  bundled). Set `NEXT_PUBLIC_COPILOT_AVATAR_URL` only for a licensed GLB; unset
+  keeps the built-in figure + text fallback. Reduced-motion respected.
+- Safety: read-only + bounded simulate only; no SCADA/PLC/control endpoints, no
+  telemetry/history writes, all sims Pydantic-bounded and labelled SIMULATION.
+- Voice: `hi-IN` speechSynthesis TTS + mic STT after explicit click; text-only
+  mode fully works; no audio recorded/uploaded/retained.
+- Tests: `project/test_copilot.py` (7 live-API tests, seeded demo, no creds);
+  full suite `pytest -q` in `project/`; frontend `npm run lint`, `npx tsc --noEmit`,
+  `npm run build` with production API base.
+- Limitations: no frontend unit runner in repo (verified via lint/type/build +
+  backend integration); no browser-automation check here (HTTP/API verified);
+  avatar is schematic not photorealistic; HEAD/periodic activity and Render
+  warmth remain best-effort (see §13c).
+
 ## 14. 🐳 Docker
 
 `Dockerfile` (Python 3.11-slim, uvicorn :8000) and `docker-compose.yml`

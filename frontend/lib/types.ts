@@ -706,6 +706,72 @@ export interface TrendAnalysis {
   mean_value?: number;
 }
 
+/* ---- AI Co-Pilot ---- */
+export type CopilotState =
+  | "IDLE" | "INITIALIZING" | "COLLECTING_EVIDENCE" | "ANALYZING"
+  | "SIMULATING" | "NARRATING" | "PAUSED" | "COMPLETED"
+  | "INSUFFICIENT_DATA" | "PARTIAL_RESULTS" | "ERROR" | "CANCELLED";
+
+export interface CopilotFindingValue {
+  name: string;
+  value: number | string | null;
+  unit?: string;
+  provenance?: string;
+}
+
+export interface CopilotFinding {
+  finding_id: string;
+  well_id: string;
+  title: string;
+  severity: string;
+  explanation: string;
+  evidence_refs: string[];
+  values: CopilotFindingValue[];
+  provenance: string;
+  limitations: string;
+  simulated: boolean;
+}
+
+export interface CopilotNarration {
+  stage: string;
+  text: string;
+  language: string;
+  highlight?: string;
+}
+
+export interface CopilotSession {
+  session_id: string;
+  well_id: string;
+  mode: string;
+  llm: { mode: string; provider: string; model: string; note: string };
+  provenance: { source: string; presentation: string };
+  has_telemetry: boolean;
+  stages: string[];
+  findings: CopilotFinding[];
+  narration: CopilotNarration;
+  limitations: string[];
+  simulation_only: boolean;
+}
+
+export interface CopilotSimulation {
+  simulation_id: string;
+  inputs: Record<string, number | string>;
+  scenario: TwinSnapshot;
+  delta: SnapshotDelta;
+  label: string;
+}
+
+export interface CopilotSimulateResponse {
+  well_id: string;
+  mode: string;
+  baseline: TwinSnapshot;
+  baseline_label: string;
+  simulations: CopilotSimulation[];
+  narration: CopilotNarration;
+  limitations: string[];
+  simulation_only: boolean;
+}
+
 /* Priority 3: ML Intelligence Engine types */
 export interface MLStatus {
   status: "OPERATIONAL" | "UNAVAILABLE";
